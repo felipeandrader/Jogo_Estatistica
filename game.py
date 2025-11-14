@@ -64,24 +64,42 @@ SHOOT_COOLDOWN = 200
 # --- Inicialização do Pygame ---
 pygame.init()
 pygame.font.init()
+# NOVO: Inicializa o mixer para áudio
+pygame.mixer.init()
+
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Jogo Estatístico - Macaco Atirador (1366x768)")
 clock = pygame.time.Clock() 
 main_font = pygame.font.SysFont("Consolas", 18) 
 title_font = pygame.font.SysFont("Consolas", 26, bold=True)
 
+# --- Carregar Áudio ---
+try:
+    MUSIC_FILE = "musica.mp3" # Nome do seu arquivo MP3
+    VOLUME = 0.10 # 20% do volume máximo (0.0 a 1.0)
+    
+    pygame.mixer.music.load(MUSIC_FILE)
+    pygame.mixer.music.set_volume(VOLUME)
+    # Toca a música em loop (-1)
+    pygame.mixer.music.play(-1) 
+    print(f"Música {MUSIC_FILE} carregada e tocando a {VOLUME*100:.0f}%")
+except pygame.error:
+    print(f"AVISO: Não foi possível carregar o arquivo '{MUSIC_FILE}'. Verifique se ele existe.")
+
+
 # --- Carregar Imagem do Jogador ---
-player_size = 90
+player_width = 110  
+player_height = 90 
 player_image = None
 try:
     player_image = pygame.image.load("monkey.png").convert_alpha()
-    player_image = pygame.transform.scale(player_image, (player_size, player_size))
+    player_image = pygame.transform.scale(player_image, (player_width, player_height))
 except pygame.error as e:
     print(f"ERRO: Não foi possível carregar 'monkey.png'. Usando quadrado azul. Detalhes: {e}")
     
 
 # --- Variáveis do Jogo ---
-player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_size // 2, player_size, player_size) 
+player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_height // 2, player_width, player_height) 
 player_speed = 8 
 items = [] 
 bullets = [] 
@@ -142,7 +160,6 @@ def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rec
     surface.blit(title_text, (bounds_rect.left + (bounds_rect.width - title_text.get_width()) // 2, bounds_rect.top + 10))
 
     total_count = sum(data_dict.values())
-    # NOVO: Reduzindo a altura máxima das barras para dar mais espaço
     max_bar_height = bounds_rect.height - 100 
     total_width_available = bounds_rect.width - 60 
 
@@ -193,7 +210,6 @@ def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rec
             count_label = str(count)
 
         count_text = main_font.render(count_label, True, WHITE)
-        # Ajusta a posição Y do texto da porcentagem
         surface.blit(count_text, (bar_x + (bar_width - count_text.get_width()) // 2, bar_y - 25)) 
 
         if expected_prob_func and total_count > 0:
@@ -280,6 +296,8 @@ while running:
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
+            # NOVO: Para a música quando o jogo é fechado
+            pygame.mixer.music.stop() 
             running = False
         
         if event.type == pygame.KEYDOWN:
@@ -352,6 +370,8 @@ while running:
         # Colisão com JOGADOR 
         if player_rect.colliderect(item["rect"]):
             print("GAME OVER! Inimigo atingiu o jogador.")
+            # NOVO: Para a música antes de fechar o jogo (redundante com QUIT, mas mais seguro)
+            pygame.mixer.music.stop()
             running = False 
             items.pop(i) 
             continue
