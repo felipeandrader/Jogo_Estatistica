@@ -1,7 +1,7 @@
 import pygame
 import random
 import math
-import menu  # <-- Importa o arquivo de menu
+import menu # Assume que existe um arquivo 'menu.py' para a tela inicial
 
 # --- Constantes e Configurações (Layout Horizontal, Jogador Livre) ---
 SCREEN_WIDTH = 1366
@@ -47,25 +47,34 @@ ITEM_PROBABILITIES = {
     "orange": 0.15
 }
 
+# NOVO: Valores de pontuação menores e menos exorbitantes
 ITEM_SCORES = {
-    "red": 100,
-    "green": 500,
-    "purple": 2000,
-    "orange": 4000
+    "red": 200,
+    "green": 400,
+    "purple": 800,
+    "orange": 1600
 }
 
 # Spawn / movimento
 ITEM_SPAWN_RATE = 30  
-ITEM_FALL_SPEED = 8   
+ITEM_INITIAL_SPEED = 8 
+# VALORES DE DIFICULDADE
+ITEM_SPEED_INCREASE = 1.5 
+ITEM_SPEED_INTERVAL = 15.0 # ALTERADO: Aumento de velocidade a cada 15 segundos
+ 
 BULLET_SPEED = 20 
 BULLET_WIDTH = 35 
 BULLET_HEIGHT = 4 
 SHOOT_COOLDOWN = 200 
 
+# Velocidade do jogador em pixels por segundo (para movimento fluido)
+PLAYER_MAX_VELOCITY = 400 
+
 # --- Inicialização do Pygame ---
 pygame.init()
 pygame.font.init()
 pygame.mixer.init()
+pygame.joystick.init() 
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Monkey Runners")
@@ -73,10 +82,21 @@ clock = pygame.time.Clock()
 main_font = pygame.font.SysFont("Consolas", 18) 
 title_font = pygame.font.SysFont("Consolas", 26, bold=True)
 
+# --- Configuração do Joystick Global ---
+joystick = None
+JOYSTICK_DEADZONE = 0.1 
+
+if pygame.joystick.get_count() > 0:
+    joystick = pygame.joystick.Joystick(0)
+    joystick.init()
+    print(f"Controle detectado: {joystick.get_name()}")
+else:
+    print("Nenhum controle detectado. Usando teclado.")
+
 # --- Carregar Áudio ---
 try:
     MUSIC_FILE = "musica.mp3" 
-    VOLUME = 0.10 
+    VOLUME = 0.05 
     pygame.mixer.music.load(MUSIC_FILE)
     pygame.mixer.music.set_volume(VOLUME)
     print(f"Música {MUSIC_FILE} carregada.")
@@ -124,6 +144,10 @@ except pygame.error as e:
     balloon_images = {} 
 
 
+# ----------------------------------------------------------------------
+## Funções de Desenho
+# ----------------------------------------------------------------------
+
 def get_empirical_prob(item_type, current_counts):
     total_count = sum(current_counts.values())
     if total_count == 0:
@@ -149,9 +173,6 @@ def draw_game(player, item_list, bullet_list, player_img):
 
     for bullet in bullet_list:
         pygame.draw.rect(screen, BULLET_COLOR, bullet)
-        
-    # --- CORREÇÃO: Linha da pontuação removida daqui ---
-    # A pontuação agora é desenhada apenas no loop 'run_game'
 
 
 def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rect, expected_prob_func=None):
@@ -204,7 +225,13 @@ def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rec
         bar_rect = pygame.Rect(bar_x, bar_y, bar_width, bar_height)
         pygame.draw.rect(surface, color, bar_rect)
 
-        label_text = main_font.render(str(item_type), True, WHITE) 
+        # RÓTULO DO EIXO X: Mostra a contagem numérica no gráfico de "Contagem"
+        if title == "Contagem":
+            label_display = str(count)
+        else:
+            label_display = item_type
+            
+        label_text = main_font.render(label_display, True, WHITE) 
         surface.blit(label_text, (bar_x + (bar_width - label_text.get_width()) // 2, graph_y_bottom + 5))
 
         if total_count > 0:
@@ -232,8 +259,7 @@ def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
     pygame.draw.rect(screen, GRAY, bounds_rect) 
     
     graph_title_text = title_font.render("Pontuação x Tempo", True, WHITE)
-    graph_title_rect = graph_title_text.get_rect(center=(bounds_rect.centerx, bounds_rect.top + 20))
-    surface.blit(graph_title_text, graph_title_rect)
+    surface.blit(graph_title_text, (bounds_rect.left + (bounds_rect.width - graph_title_text.get_width()) // 2, bounds_rect.top + 20))
 
     MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, MARGIN_BOTTOM = 60, 30, 50, 50 
     PLOT_AREA = pygame.Rect(bounds_rect.left + MARGIN_LEFT, bounds_rect.top + MARGIN_TOP,
@@ -259,8 +285,10 @@ def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
     max_time_to_scale = max(max_time_raw, elapsed_time)
     
     max_time_scaled = math.ceil(max(10, max_time_to_scale) / 10) * 10
-    Y_STEP = 2000
-    max_score_scaled = math.ceil(max(4000, max_score_raw) / Y_STEP) * Y_STEP
+    
+    # NOVO: Ajuste de escala para os novos valores de pontuação (max single score 1600, usa 2000 como base)
+    Y_STEP = 2000 
+    max_score_scaled = math.ceil(max(2000, max_score_raw) / Y_STEP) * Y_STEP
 
     scaled_points = []
     for time_val, score_val in data_points:
@@ -291,28 +319,38 @@ def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
     surface.blit(time_label, time_label_rect)
 
 # ----------------------------------------------------------------------
-# --- O JOGO AGORA É UMA FUNÇÃO ---
+# --- FUNÇÃO PRINCIPAL DO JOGO (STATE: GAME) ---
 # ----------------------------------------------------------------------
+
+# Defina a variável global current_score no topo do script principal
+global current_score
+current_score = 0
+
+# Variáveis do Joystick (mantidas fora do loop principal, mas inicializadas dentro do main/run_game)
+joystick_x = 0.0
+joystick_y = 0.0
+
 def run_game(screen):
     
-    # --- Todas as variáveis de estado foram movidas para AQUI ---
-    
-    # --- Variáveis do Jogo ---
+    # Variáveis de Controle de Dificuldade
+    current_item_speed = ITEM_INITIAL_SPEED
+    last_speed_increase_time = pygame.time.get_ticks()
+
+    # Variáveis do Jogo
     player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_height // 2, player_width, player_height) 
-    player_speed = 8 
     items = [] 
     bullets = [] 
     item_spawn_timer = 0
     last_shot_time = 0
 
-    # --- Variáveis de Animação do Player ---
+    # Variáveis de Animação
     player_frame_index = 0 
     player_last_frame_update = pygame.time.get_ticks()
     PLAYER_ANIMATION_SPEED_MS = 100 
     PLAYER_ANIMATION_SEQUENCE = [1, 0, 2, 0]
 
-    # ----- VARIÁVEIS DE ESTADO -----
-    global current_score 
+    # Variáveis de Estado
+    global current_score
     current_score = 0
     score_vs_time = [(0.0, 0)]
     start_time_ms = pygame.time.get_ticks()
@@ -324,44 +362,81 @@ def run_game(screen):
     last_collection_time = pygame.time.get_ticks() 
     all_collection_intervals = []
     
-    
-    # --- Loop Principal do Jogo (O `while running` original) ---
+    # --- Loop Principal do Jogo ---
     running = True
     while running:
+        dt = clock.tick(60) / 1000.0
         current_time_ticks = pygame.time.get_ticks() 
         elapsed_time_sec = (current_time_ticks - start_time_ms) / 1000.0
+
+        # --- LÓGICA DE AUMENTO DE VELOCIDADE (DIFICULDADE) ---
+        global ITEM_SPEED_INTERVAL, ITEM_SPEED_INCREASE
+        # Verifica o tempo decorrido desde o último aumento (em segundos)
+        if (current_time_ticks - last_speed_increase_time) / 1000.0 >= ITEM_SPEED_INTERVAL:
+            current_item_speed += ITEM_SPEED_INCREASE
+            last_speed_increase_time = current_time_ticks
+            print(f"Dificuldade Aumentada! Velocidade atual: {current_item_speed:.2f}")
+
+
+        # Resetar os valores do joystick a cada frame
+        global joystick, joystick_x, joystick_y, JOYSTICK_DEADZONE
+        joystick_x = 0.0
+        joystick_y = 0.0
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.mixer.music.stop() 
                 return "QUIT" 
             
+            # --- EVENTOS DE CONTROLE ---
+            if joystick:
+                if event.type == pygame.JOYAXISMOTION:
+                    if event.axis == 0: 
+                        joystick_x = event.value
+                    elif event.axis == 1: 
+                        joystick_y = event.value
+                
+                elif event.type == pygame.JOYBUTTONDOWN:
+                    if event.button == 0: 
+                        if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
+                            bullet_rect = pygame.Rect(player_rect.right, player_rect.centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
+                            bullets.append(bullet_rect)
+                            last_shot_time = current_time_ticks
+
+            # --- EVENTOS DE TECLADO (DISPARO) ---
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE: 
                     if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
-                        bullet_rect = pygame.Rect(
-                            player_rect.right, 
-                            player_rect.centery - BULLET_HEIGHT // 2, 
-                            BULLET_WIDTH, 
-                            BULLET_HEIGHT
-                        )
+                        bullet_rect = pygame.Rect(player_rect.right, player_rect.centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
                         bullets.append(bullet_rect)
-                        last_shot_time = current_time_ticks 
+                        last_shot_time = current_time_ticks
 
-        # --- Teclas (Controles Livres 4-direções) ---
+        # --- Aplicação do Movimento (Teclado e Controle Fluido) ---
         keys = pygame.key.get_pressed()
         
-        # --- ATUALIZADO AQUI COM WASD ---
+        move_x = 0.0 
+        move_y = 0.0 
+        
+        # Leitura do teclado
         if keys[pygame.K_UP] or keys[pygame.K_w]: 
-            player_rect.y -= player_speed
+            move_y -= 1.0 
         if keys[pygame.K_DOWN] or keys[pygame.K_s]: 
-            player_rect.y += player_speed
-            
+            move_y += 1.0 
         if keys[pygame.K_LEFT] or keys[pygame.K_a]: 
-            player_rect.x -= player_speed
+            move_x -= 1.0 
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]: 
-            player_rect.x += player_speed
-        # --- FIM DA ATUALIZAÇÃO ---
+            move_x += 1.0 
+
+        # Leitura do Joystick
+        if joystick:
+            if abs(joystick_x) > JOYSTICK_DEADZONE:
+                move_x += joystick_x
+            if abs(joystick_y) > JOYSTICK_DEADZONE:
+                move_y += joystick_y
+
+        # Aplicação do movimento fluido (dt-based)
+        player_rect.x += move_x * PLAYER_MAX_VELOCITY * dt
+        player_rect.y += move_y * PLAYER_MAX_VELOCITY * dt
 
 
         # --- Limites do jogador (Vertical e Horizontal) ---
@@ -369,7 +444,6 @@ def run_game(screen):
             player_rect.top = 0
         if player_rect.bottom > GAME_HEIGHT: 
             player_rect.bottom = GAME_HEIGHT
-        
         if player_rect.left < 0:
             player_rect.left = 0
         if player_rect.right > GAME_WIDTH: 
@@ -382,23 +456,24 @@ def run_game(screen):
             item_spawn_timer = 0
             item_type = random.choices(COLOR_TYPES, weights=[ITEM_PROBABILITIES[t] for t in COLOR_TYPES], k=1)[0]
             item_color = ITEM_COLORS[item_type]
+            
             item_x = GAME_WIDTH + ITEM_IMAGE_WIDTH 
             item_y = random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT) 
             
             new_item_rect = pygame.Rect(item_x, item_y, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
             items.append({"rect": new_item_rect, "color": item_color, "type": item_type, "image": balloon_images.get(item_type)})
 
-        # Mover projéteis (Para Direita)
+        # Mover projéteis
         for i in range(len(bullets) - 1, -1, -1):
             bullet = bullets[i]
             bullet.x += BULLET_SPEED 
             if bullet.left > GAME_WIDTH: 
                 bullets.pop(i)
 
-        # Mover inimigos (Para Esquerda)
+        # Mover inimigos (USANDO A VELOCIDADE ATUALIZADA current_item_speed)
         for i in range(len(items) - 1, -1, -1):
             item = items[i]
-            item["rect"].x -= ITEM_FALL_SPEED 
+            item["rect"].x -= current_item_speed 
             
             if item["rect"].right < 0:
                 items.pop(i)
@@ -463,10 +538,8 @@ def run_game(screen):
             actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
             current_player_img = player_animation_frames[actual_frame_index]
 
-        # Passa o frame ATUAL para a função de desenho
         draw_game(player_rect, items, bullets, current_player_img)
         
-        # --- CORREÇÃO: Pontuação desenhada aqui, *depois* do fundo do jogo ---
         score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
         screen.blit(score_text, (10, 10))
 
@@ -477,14 +550,14 @@ def run_game(screen):
         rect_grafico_3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
 
         draw_histogram(screen, stats_counts, COLOR_TYPES, ITEM_COLORS,
-                       "Contagem", rect_grafico_1,
-                       expected_prob_func=lambda t: get_empirical_prob(t, stats_counts))
+                        "Contagem", rect_grafico_1,
+                        expected_prob_func=lambda t: get_empirical_prob(t, stats_counts))
 
         draw_scatter_plot(screen, score_vs_time, rect_grafico_2, elapsed_time_sec)
 
         draw_histogram(screen, stats_intervals, INTERVAL_KEYS, INTERVAL_COLORS,
-                       "Intervalo de Destruição", rect_grafico_3,
-                       expected_prob_func=lambda k: get_empirical_prob(k, stats_intervals))
+                        "Intervalo de Destruição", rect_grafico_3,
+                        expected_prob_func=lambda k: get_empirical_prob(k, stats_intervals))
         
         # --- Divisórias ---
         pygame.draw.line(screen, WHITE, (0, GAME_HEIGHT), (SCREEN_WIDTH, GAME_HEIGHT), 3) 
@@ -492,19 +565,21 @@ def run_game(screen):
         pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_2, GAME_HEIGHT), (GRAPH_X_SPLIT_2, SCREEN_HEIGHT), 3)
 
         pygame.display.flip()
-        clock.tick(60)
+
 
 # ----------------------------------------------------------------------
 # --- LOOP PRINCIPAL DA APLICAÇÃO (GERENCIADOR DE ESTADO) ---
 # ----------------------------------------------------------------------
 
-current_score = 0 
-
 def main():
+    # Garante que o joystick esteja inicializado globalmente para toda a aplicação
+    global joystick
+    
     current_state = "MENU"
     
     while True:
         if current_state == "MENU":
+            # Assume que menu.show_menu existe e retorna "PLAY" ou "QUIT"
             result = menu.show_menu(screen, SCREEN_WIDTH, SCREEN_HEIGHT, title_font, main_font)
             if result == "PLAY":
                 current_state = "GAME"
@@ -518,6 +593,8 @@ def main():
         elif current_state == "GAME":
             result = run_game(screen)
             if result == "GAME_OVER":
+                final_score = current_score 
+                print(f"Fim de Jogo. Pontuação Final: {final_score}")
                 current_state = "MENU" 
             elif result == "QUIT":
                 break 
