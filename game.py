@@ -64,23 +64,21 @@ SHOOT_COOLDOWN = 200
 # --- Inicialização do Pygame ---
 pygame.init()
 pygame.font.init()
-# NOVO: Inicializa o mixer para áudio
 pygame.mixer.init()
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Jogo Estatístico - Macaco Atirador (1366x768)")
+pygame.display.set_caption("Monkey Runners")
 clock = pygame.time.Clock() 
 main_font = pygame.font.SysFont("Consolas", 18) 
 title_font = pygame.font.SysFont("Consolas", 26, bold=True)
 
 # --- Carregar Áudio ---
 try:
-    MUSIC_FILE = "musica.mp3" # Nome do seu arquivo MP3
-    VOLUME = 0.10 # 20% do volume máximo (0.0 a 1.0)
+    MUSIC_FILE = "musica.mp3" 
+    VOLUME = 0.10 
     
     pygame.mixer.music.load(MUSIC_FILE)
     pygame.mixer.music.set_volume(VOLUME)
-    # Toca a música em loop (-1)
     pygame.mixer.music.play(-1) 
     print(f"Música {MUSIC_FILE} carregada e tocando a {VOLUME*100:.0f}%")
 except pygame.error:
@@ -97,6 +95,29 @@ try:
 except pygame.error as e:
     print(f"ERRO: Não foi possível carregar 'monkey.png'. Usando quadrado azul. Detalhes: {e}")
     
+
+# --- Carregar Imagens dos Balões (Inimigos) ---
+ITEM_IMAGE_WIDTH = 60 # Largura dos balões
+ITEM_IMAGE_HEIGHT = 80 # NOVO: Altura dos balões (aumentada)
+balloon_images = {}
+try:
+    balloon_images["red"] = pygame.image.load("balaovermelho.png").convert_alpha()
+    balloon_images["red"] = pygame.transform.scale(balloon_images["red"], (ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT))
+    
+    balloon_images["green"] = pygame.image.load("balaoverde.png").convert_alpha()
+    balloon_images["green"] = pygame.transform.scale(balloon_images["green"], (ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT))
+    
+    balloon_images["purple"] = pygame.image.load("balaoroxo.png").convert_alpha()
+    balloon_images["purple"] = pygame.transform.scale(balloon_images["purple"], (ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT))
+    
+    balloon_images["orange"] = pygame.image.load("balaoamarelo.png").convert_alpha() 
+    balloon_images["orange"] = pygame.transform.scale(balloon_images["orange"], (ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT))
+    print("Todas as imagens de balões foram carregadas com sucesso.")
+
+except pygame.error as e:
+    print(f"ERRO: Não foi possível carregar uma ou mais imagens de balões. Usando círculos. Detalhes: {e}")
+    balloon_images = {} # Limpa as imagens para usar o fallback
+
 
 # --- Variáveis do Jogo ---
 player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_height // 2, player_width, player_height) 
@@ -138,10 +159,14 @@ def draw_game(player, item_list, bullet_list, player_img):
     else:
         pygame.draw.rect(screen, PLAYER_COLOR, player)
     
+    # Desenha os inimigos (agora com imagens de balões)
     for item in item_list:
-        center = (int(item["rect"].centerx), int(item["rect"].centery))
-        radius = int(item["rect"].width // 2)
-        pygame.draw.circle(screen, item["color"], center, radius)
+        if item["image"]: 
+            screen.blit(item["image"], item["rect"].topleft)
+        else: 
+            center = (int(item["rect"].centerx), int(item["rect"].centery))
+            radius = int(item["rect"].width // 2)
+            pygame.draw.circle(screen, item["color"], center, radius)
 
     for bullet in bullet_list:
         pygame.draw.rect(screen, BULLET_COLOR, bullet)
@@ -296,7 +321,6 @@ while running:
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            # NOVO: Para a música quando o jogo é fechado
             pygame.mixer.music.stop() 
             running = False
         
@@ -345,11 +369,12 @@ while running:
         item_spawn_timer = 0
         item_type = random.choices(COLOR_TYPES, weights=[ITEM_PROBABILITIES[t] for t in COLOR_TYPES], k=1)[0]
         item_color = ITEM_COLORS[item_type]
-        item_size_spawn = 30 
-        item_x = GAME_WIDTH + item_size_spawn
-        item_y = random.randint(0, GAME_HEIGHT - item_size_spawn)
-        new_item_rect = pygame.Rect(item_x, item_y, item_size_spawn, item_size_spawn)
-        items.append({"rect": new_item_rect, "color": item_color, "type": item_type})
+        item_x = GAME_WIDTH + ITEM_IMAGE_WIDTH 
+        item_y = random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT) # Usa a nova altura para o spawn
+        
+        # Cria o rect do item com o novo tamanho (largura, altura) da imagem
+        new_item_rect = pygame.Rect(item_x, item_y, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
+        items.append({"rect": new_item_rect, "color": item_color, "type": item_type, "image": balloon_images.get(item_type)})
 
     # Mover projéteis (Para Direita)
     for i in range(len(bullets) - 1, -1, -1):
@@ -370,7 +395,6 @@ while running:
         # Colisão com JOGADOR 
         if player_rect.colliderect(item["rect"]):
             print("GAME OVER! Inimigo atingiu o jogador.")
-            # NOVO: Para a música antes de fechar o jogo (redundante com QUIT, mas mais seguro)
             pygame.mixer.music.stop()
             running = False 
             items.pop(i) 
