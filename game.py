@@ -1,6 +1,7 @@
 import pygame
 import random
 import math
+import menu  # <-- Importa o arquivo de menu
 
 # --- Constantes e Configurações (Layout Horizontal, Jogador Livre) ---
 SCREEN_WIDTH = 1366
@@ -76,24 +77,20 @@ title_font = pygame.font.SysFont("Consolas", 26, bold=True)
 try:
     MUSIC_FILE = "musica.mp3" 
     VOLUME = 0.10 
-    
     pygame.mixer.music.load(MUSIC_FILE)
     pygame.mixer.music.set_volume(VOLUME)
-    pygame.mixer.music.play(-1) 
-    print(f"Música {MUSIC_FILE} carregada e tocando a {VOLUME*100:.0f}%")
+    print(f"Música {MUSIC_FILE} carregada.")
 except pygame.error:
-    print(f"AVISO: Não foi possível carregar o arquivo '{MUSIC_FILE}'. Verifique se ele existe.")
+    print(f"AVISO: Não foi possível carregar o arquivo '{MUSIC_FILE}'.")
 
 
-# --- MUDANÇA 1: Carregar Imagem do Jogador ---
+# --- Carregar Imagem do Jogador ---
 player_width = 110  
 player_height = 90 
 player_animation_frames = [] 
-# NOVO: Lista dos seus arquivos exatos
 player_filenames = ["macaco1.png", "macaco2.png", "macaco3.png"] 
 
 try:
-    # Carrega os arquivos da lista na ordem
     for filename in player_filenames: 
         image = pygame.image.load(filename).convert_alpha()
         image = pygame.transform.scale(image, (player_width, player_height))
@@ -101,7 +98,7 @@ try:
     print(f"Animação do jogador carregada ({len(player_animation_frames)} frames).")
 except pygame.error as e:
     print(f"ERRO: Não foi possível carregar a animação 'macaco*.png'. Usando quadrado azul. Detalhes: {e}")
-    player_animation_frames = [] # Garante que a lista está vazia se falhar
+    player_animation_frames = []
     
 
 # --- Carregar Imagens dos Balões (Inimigos) ---
@@ -127,45 +124,6 @@ except pygame.error as e:
     balloon_images = {} 
 
 
-# --- Variáveis do Jogo ---
-player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_height // 2, player_width, player_height) 
-player_speed = 8 
-items = [] 
-bullets = [] 
-item_spawn_timer = 0
-last_shot_time = 0
-
-# --- MUDANÇA 2: Variáveis de Animação do Player ---
-player_frame_index = 0 # Este agora é o índice DA SEQUÊNCIA
-player_last_frame_update = pygame.time.get_ticks()
-PLAYER_ANIMATION_SPEED_MS = 100 # ms (Velocidade da animação)
-
-# NOVO: A sequência de frames que você pediu (índices da lista)
-# player_animation_frames[0] = macaco1.png
-# player_animation_frames[1] = macaco2.png
-# player_animation_frames[2] = macaco3.png
-#
-# Sequência pedida: 2 - 1 - 3 - 1 ...
-# Sequência em ÍNDICES: 1 - 0 - 2 - 0 ...
-PLAYER_ANIMATION_SEQUENCE = [1, 0, 2, 0]
-
-# ----- VARIÁVEIS DE ESTADO -----
-current_score = 0
-score_vs_time = [(0.0, 0)]
-start_time_ms = pygame.time.get_ticks()
-
-stats_counts = {"red": 0, "green": 0, "purple": 0, "orange": 0}
-stats_intervals = {"0-0.7s": 0, "0.7-1.4": 0, "1.4-2.0": 0, "2.0s+": 0} 
-INTERVAL_KEYS = list(stats_intervals.keys())
-INTERVAL_COLORS = {key: GRAPH_YELLOW for key in INTERVAL_KEYS}
-last_collection_time = pygame.time.get_ticks() 
-all_collection_intervals = []
-
-
-# ----------------------------------------------------------------------
-## Funções de Desenho
-# ----------------------------------------------------------------------
-
 def get_empirical_prob(item_type, current_counts):
     total_count = sum(current_counts.values())
     if total_count == 0:
@@ -179,7 +137,6 @@ def draw_game(player, item_list, bullet_list, player_img):
     if player_img:
         screen.blit(player_img, player.topleft)
     else:
-        # Fallback se a animação não carregou
         pygame.draw.rect(screen, PLAYER_COLOR, player)
     
     for item in item_list:
@@ -193,8 +150,8 @@ def draw_game(player, item_list, bullet_list, player_img):
     for bullet in bullet_list:
         pygame.draw.rect(screen, BULLET_COLOR, bullet)
         
-    score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
-    screen.blit(score_text, (10, 10))
+    # --- CORREÇÃO: Linha da pontuação removida daqui ---
+    # A pontuação agora é desenhada apenas no loop 'run_game'
 
 
 def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rect, expected_prob_func=None):
@@ -333,173 +290,239 @@ def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
     time_label_rect = time_label.get_rect(midright=(PLOT_AREA.right, PLOT_AREA.bottom + 10)) 
     surface.blit(time_label, time_label_rect)
 
-
 # ----------------------------------------------------------------------
-## Loop Principal do Jogo
+# --- O JOGO AGORA É UMA FUNÇÃO ---
 # ----------------------------------------------------------------------
-running = True
-while running:
-    current_time_ticks = pygame.time.get_ticks() 
-    elapsed_time_sec = (current_time_ticks - start_time_ms) / 1000.0
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.mixer.music.stop() 
-            running = False
-        
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE: 
-                if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
-                    bullet_rect = pygame.Rect(
-                        player_rect.right, 
-                        player_rect.centery - BULLET_HEIGHT // 2, 
-                        BULLET_WIDTH, 
-                        BULLET_HEIGHT
-                    )
-                    bullets.append(bullet_rect)
-                    last_shot_time = current_time_ticks 
-
-    # --- Teclas (Controles Livres 4-direções) ---
-    keys = pygame.key.get_pressed()
+def run_game(screen):
     
-    if keys[pygame.K_UP]: 
-        player_rect.y -= player_speed
-    if keys[pygame.K_DOWN]: 
-        player_rect.y += player_speed
-        
-    if keys[pygame.K_LEFT]: 
-        player_rect.x -= player_speed
-    if keys[pygame.K_RIGHT]: 
-        player_rect.x += player_speed
-
-
-    # --- Limites do jogador (Vertical e Horizontal) ---
-    if player_rect.top < 0:
-        player_rect.top = 0
-    if player_rect.bottom > GAME_HEIGHT: 
-        player_rect.bottom = GAME_HEIGHT
+    # --- Todas as variáveis de estado foram movidas para AQUI ---
     
-    if player_rect.left < 0:
-        player_rect.left = 0
-    if player_rect.right > GAME_WIDTH: 
-        player_rect.right = GAME_WIDTH
+    # --- Variáveis do Jogo ---
+    player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_height // 2, player_width, player_height) 
+    player_speed = 8 
+    items = [] 
+    bullets = [] 
+    item_spawn_timer = 0
+    last_shot_time = 0
 
+    # --- Variáveis de Animação do Player ---
+    player_frame_index = 0 
+    player_last_frame_update = pygame.time.get_ticks()
+    PLAYER_ANIMATION_SPEED_MS = 100 
+    PLAYER_ANIMATION_SEQUENCE = [1, 0, 2, 0]
 
-    # --- Spawn de inimigos (Vem da Direita) ---
-    item_spawn_timer += 1
-    if item_spawn_timer >= ITEM_SPAWN_RATE:
-        item_spawn_timer = 0
-        item_type = random.choices(COLOR_TYPES, weights=[ITEM_PROBABILITIES[t] for t in COLOR_TYPES], k=1)[0]
-        item_color = ITEM_COLORS[item_type]
-        item_x = GAME_WIDTH + ITEM_IMAGE_WIDTH 
-        item_y = random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT) 
-        
-        new_item_rect = pygame.Rect(item_x, item_y, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
-        items.append({"rect": new_item_rect, "color": item_color, "type": item_type, "image": balloon_images.get(item_type)})
+    # ----- VARIÁVEIS DE ESTADO -----
+    global current_score 
+    current_score = 0
+    score_vs_time = [(0.0, 0)]
+    start_time_ms = pygame.time.get_ticks()
 
-    # Mover projéteis (Para Direita)
-    for i in range(len(bullets) - 1, -1, -1):
-        bullet = bullets[i]
-        bullet.x += BULLET_SPEED 
-        if bullet.left > GAME_WIDTH: 
-            bullets.pop(i)
+    stats_counts = {"red": 0, "green": 0, "purple": 0, "orange": 0}
+    stats_intervals = {"0-0.7s": 0, "0.7-1.4": 0, "1.4-2.0": 0, "2.0s+": 0} 
+    INTERVAL_KEYS = list(stats_intervals.keys())
+    INTERVAL_COLORS = {key: GRAPH_YELLOW for key in INTERVAL_KEYS}
+    last_collection_time = pygame.time.get_ticks() 
+    all_collection_intervals = []
+    
+    
+    # --- Loop Principal do Jogo (O `while running` original) ---
+    running = True
+    while running:
+        current_time_ticks = pygame.time.get_ticks() 
+        elapsed_time_sec = (current_time_ticks - start_time_ms) / 1000.0
 
-    # Mover inimigos (Para Esquerda)
-    for i in range(len(items) - 1, -1, -1):
-        item = items[i]
-        item["rect"].x -= ITEM_FALL_SPEED 
-        
-        if item["rect"].right < 0:
-            items.pop(i)
-            continue
-
-        # Colisão com JOGADOR 
-        if player_rect.colliderect(item["rect"]):
-            print("GAME OVER! Inimigo atingiu o jogador.")
-            pygame.mixer.music.stop()
-            running = False 
-            items.pop(i) 
-            continue
-
-    # Colisão PROJÉTIL-INIMIGO 
-    for b_idx in range(len(bullets) - 1, -1, -1):
-        bullet = bullets[b_idx]
-        hit_detected = False
-
-        for i_idx in range(len(items) - 1, -1, -1):
-            item = items[i_idx]
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.mixer.music.stop() 
+                return "QUIT" 
             
-            if bullet.colliderect(item["rect"]):
-                item_type = item["type"]
-                current_score += ITEM_SCORES[item_type]
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE: 
+                    if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
+                        bullet_rect = pygame.Rect(
+                            player_rect.right, 
+                            player_rect.centery - BULLET_HEIGHT // 2, 
+                            BULLET_WIDTH, 
+                            BULLET_HEIGHT
+                        )
+                        bullets.append(bullet_rect)
+                        last_shot_time = current_time_ticks 
+
+        # --- Teclas (Controles Livres 4-direções) ---
+        keys = pygame.key.get_pressed()
+        
+        # --- ATUALIZADO AQUI COM WASD ---
+        if keys[pygame.K_UP] or keys[pygame.K_w]: 
+            player_rect.y -= player_speed
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]: 
+            player_rect.y += player_speed
+            
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]: 
+            player_rect.x -= player_speed
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]: 
+            player_rect.x += player_speed
+        # --- FIM DA ATUALIZAÇÃO ---
+
+
+        # --- Limites do jogador (Vertical e Horizontal) ---
+        if player_rect.top < 0:
+            player_rect.top = 0
+        if player_rect.bottom > GAME_HEIGHT: 
+            player_rect.bottom = GAME_HEIGHT
+        
+        if player_rect.left < 0:
+            player_rect.left = 0
+        if player_rect.right > GAME_WIDTH: 
+            player_rect.right = GAME_WIDTH
+
+
+        # --- Spawn de inimigos (Vem da Direita) ---
+        item_spawn_timer += 1
+        if item_spawn_timer >= ITEM_SPAWN_RATE:
+            item_spawn_timer = 0
+            item_type = random.choices(COLOR_TYPES, weights=[ITEM_PROBABILITIES[t] for t in COLOR_TYPES], k=1)[0]
+            item_color = ITEM_COLORS[item_type]
+            item_x = GAME_WIDTH + ITEM_IMAGE_WIDTH 
+            item_y = random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT) 
+            
+            new_item_rect = pygame.Rect(item_x, item_y, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
+            items.append({"rect": new_item_rect, "color": item_color, "type": item_type, "image": balloon_images.get(item_type)})
+
+        # Mover projéteis (Para Direita)
+        for i in range(len(bullets) - 1, -1, -1):
+            bullet = bullets[i]
+            bullet.x += BULLET_SPEED 
+            if bullet.left > GAME_WIDTH: 
+                bullets.pop(i)
+
+        # Mover inimigos (Para Esquerda)
+        for i in range(len(items) - 1, -1, -1):
+            item = items[i]
+            item["rect"].x -= ITEM_FALL_SPEED 
+            
+            if item["rect"].right < 0:
+                items.pop(i)
+                continue
+
+            # Colisão com JOGADOR 
+            if player_rect.colliderect(item["rect"]):
+                print("GAME OVER! Inimigo atingiu o jogador.")
+                pygame.mixer.music.stop()
+                items.pop(i) 
+                return "GAME_OVER" 
                 
-                score_vs_time.append((elapsed_time_sec, current_score))
-                stats_counts[item_type] += 1
 
-                interval_sec = (current_time_ticks - last_collection_time) / 1000.0
-                last_collection_time = current_time_ticks
-                all_collection_intervals.append(interval_sec)
+        # Colisão PROJÉTIL-INIMIGO 
+        for b_idx in range(len(bullets) - 1, -1, -1):
+            bullet = bullets[b_idx]
+            hit_detected = False
 
-                if interval_sec < 0.7:
-                    stats_intervals["0-0.7s"] += 1
-                elif interval_sec < 1.4:
-                    stats_intervals["0.7-1.4"] += 1
-                elif interval_sec < 2.0:
-                    stats_intervals["1.4-2.0"] += 1
-                else: 
-                    stats_intervals["2.0s+"] += 1 
-
-                items.pop(i_idx)
-                bullets.pop(b_idx)
+            for i_idx in range(len(items) - 1, -1, -1):
+                item = items[i_idx]
                 
-                hit_detected = True
+                if bullet.colliderect(item["rect"]):
+                    item_type = item["type"]
+                    current_score += ITEM_SCORES[item_type]
+                    
+                    score_vs_time.append((elapsed_time_sec, current_score))
+                    stats_counts[item_type] += 1
+
+                    interval_sec = (current_time_ticks - last_collection_time) / 1000.0
+                    last_collection_time = current_time_ticks
+                    all_collection_intervals.append(interval_sec)
+
+                    if interval_sec < 0.7:
+                        stats_intervals["0-0.7s"] += 1
+                    elif interval_sec < 1.4:
+                        stats_intervals["0.7-1.4"] += 1
+                    elif interval_sec < 2.0:
+                        stats_intervals["1.4-2.0"] += 1
+                    else: 
+                        stats_intervals["2.0s+"] += 1 
+
+                    items.pop(i_idx)
+                    bullets.pop(b_idx)
+                    
+                    hit_detected = True
+                    break 
+            
+            if hit_detected:
+                continue
+                
+        # --- Atualização da Animação do Player ---
+        if player_animation_frames: 
+            if current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS:
+                player_last_frame_update = current_time_ticks
+                player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
+
+        # --- Renderização ---
+        screen.fill(BLACK) 
+        
+        current_player_img = None
+        if player_animation_frames:
+            actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
+            current_player_img = player_animation_frames[actual_frame_index]
+
+        # Passa o frame ATUAL para a função de desenho
+        draw_game(player_rect, items, bullets, current_player_img)
+        
+        # --- CORREÇÃO: Pontuação desenhada aqui, *depois* do fundo do jogo ---
+        score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
+        screen.blit(score_text, (10, 10))
+
+
+        # --- Define os RECTs dos gráficos ---
+        rect_grafico_1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        rect_grafico_2 = pygame.Rect(GRAPH_X_SPLIT_1, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        rect_grafico_3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+
+        draw_histogram(screen, stats_counts, COLOR_TYPES, ITEM_COLORS,
+                       "Contagem", rect_grafico_1,
+                       expected_prob_func=lambda t: get_empirical_prob(t, stats_counts))
+
+        draw_scatter_plot(screen, score_vs_time, rect_grafico_2, elapsed_time_sec)
+
+        draw_histogram(screen, stats_intervals, INTERVAL_KEYS, INTERVAL_COLORS,
+                       "Intervalo de Destruição", rect_grafico_3,
+                       expected_prob_func=lambda k: get_empirical_prob(k, stats_intervals))
+        
+        # --- Divisórias ---
+        pygame.draw.line(screen, WHITE, (0, GAME_HEIGHT), (SCREEN_WIDTH, GAME_HEIGHT), 3) 
+        pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_1, GAME_HEIGHT), (GRAPH_X_SPLIT_1, SCREEN_HEIGHT), 3)
+        pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_2, GAME_HEIGHT), (GRAPH_X_SPLIT_2, SCREEN_HEIGHT), 3)
+
+        pygame.display.flip()
+        clock.tick(60)
+
+# ----------------------------------------------------------------------
+# --- LOOP PRINCIPAL DA APLICAÇÃO (GERENCIADOR DE ESTADO) ---
+# ----------------------------------------------------------------------
+
+current_score = 0 
+
+def main():
+    current_state = "MENU"
+    
+    while True:
+        if current_state == "MENU":
+            result = menu.show_menu(screen, SCREEN_WIDTH, SCREEN_HEIGHT, title_font, main_font)
+            if result == "PLAY":
+                current_state = "GAME"
+                try:
+                    pygame.mixer.music.play(-1) 
+                except pygame.error:
+                    print("Não foi possível tocar a música.")
+            elif result == "QUIT":
                 break 
-        
-        if hit_detected:
-            continue
-            
-    # --- MUDANÇA 3: Atualização da Animação do Player ---
-    if player_animation_frames: # Só atualiza se a animação foi carregada
-        if current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS:
-            player_last_frame_update = current_time_ticks
-            # Avança para o próximo item na *sequência* [1, 0, 2, 0]
-            player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
+                
+        elif current_state == "GAME":
+            result = run_game(screen)
+            if result == "GAME_OVER":
+                current_state = "MENU" 
+            elif result == "QUIT":
+                break 
 
-    # --- Renderização ---
-    screen.fill(BLACK) 
-    
-    # --- MUDANÇA 3: Seleciona o frame correto para desenhar ---
-    current_player_img = None
-    if player_animation_frames:
-        # Pega o índice da sequência (ex: 1)
-        actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
-        # Pega a imagem real (ex: frame 1, que é 'macaco2.png')
-        current_player_img = player_animation_frames[actual_frame_index]
+    pygame.quit()
 
-    # Passa o frame ATUAL para a função de desenho
-    draw_game(player_rect, items, bullets, current_player_img)
-
-    # --- Define os RECTs dos gráficos ---
-    rect_grafico_1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
-    rect_grafico_2 = pygame.Rect(GRAPH_X_SPLIT_1, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
-    rect_grafico_3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
-
-    draw_histogram(screen, stats_counts, COLOR_TYPES, ITEM_COLORS,
-                   "Contagem", rect_grafico_1,
-                   expected_prob_func=lambda t: get_empirical_prob(t, stats_counts))
-
-    draw_scatter_plot(screen, score_vs_time, rect_grafico_2, elapsed_time_sec)
-
-    draw_histogram(screen, stats_intervals, INTERVAL_KEYS, INTERVAL_COLORS,
-                   "Intervalo de Destruição", rect_grafico_3,
-                   expected_prob_func=lambda k: get_empirical_prob(k, stats_intervals))
-    
-    # --- Divisórias ---
-    pygame.draw.line(screen, WHITE, (0, GAME_HEIGHT), (SCREEN_WIDTH, GAME_HEIGHT), 3) 
-    pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_1, GAME_HEIGHT), (GRAPH_X_SPLIT_1, SCREEN_HEIGHT), 3)
-    pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_2, GAME_HEIGHT), (GRAPH_X_SPLIT_2, SCREEN_HEIGHT), 3)
-
-    pygame.display.flip()
-    clock.tick(60)
-
-pygame.quit()
+if __name__ == "__main__":
+    main()
