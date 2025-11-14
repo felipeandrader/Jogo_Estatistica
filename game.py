@@ -85,20 +85,28 @@ except pygame.error:
     print(f"AVISO: Não foi possível carregar o arquivo '{MUSIC_FILE}'. Verifique se ele existe.")
 
 
-# --- Carregar Imagem do Jogador ---
+# --- MUDANÇA 1: Carregar Imagem do Jogador ---
 player_width = 110  
 player_height = 90 
-player_image = None
+player_animation_frames = [] 
+# NOVO: Lista dos seus arquivos exatos
+player_filenames = ["macaco1.png", "macaco2.png", "macaco3.png"] 
+
 try:
-    player_image = pygame.image.load("monkey.png").convert_alpha()
-    player_image = pygame.transform.scale(player_image, (player_width, player_height))
+    # Carrega os arquivos da lista na ordem
+    for filename in player_filenames: 
+        image = pygame.image.load(filename).convert_alpha()
+        image = pygame.transform.scale(image, (player_width, player_height))
+        player_animation_frames.append(image)
+    print(f"Animação do jogador carregada ({len(player_animation_frames)} frames).")
 except pygame.error as e:
-    print(f"ERRO: Não foi possível carregar 'monkey.png'. Usando quadrado azul. Detalhes: {e}")
+    print(f"ERRO: Não foi possível carregar a animação 'macaco*.png'. Usando quadrado azul. Detalhes: {e}")
+    player_animation_frames = [] # Garante que a lista está vazia se falhar
     
 
 # --- Carregar Imagens dos Balões (Inimigos) ---
-ITEM_IMAGE_WIDTH = 60 # Largura dos balões
-ITEM_IMAGE_HEIGHT = 80 # NOVO: Altura dos balões (aumentada)
+ITEM_IMAGE_WIDTH = 60 
+ITEM_IMAGE_HEIGHT = 80 
 balloon_images = {}
 try:
     balloon_images["red"] = pygame.image.load("balaovermelho.png").convert_alpha()
@@ -116,7 +124,7 @@ try:
 
 except pygame.error as e:
     print(f"ERRO: Não foi possível carregar uma ou mais imagens de balões. Usando círculos. Detalhes: {e}")
-    balloon_images = {} # Limpa as imagens para usar o fallback
+    balloon_images = {} 
 
 
 # --- Variáveis do Jogo ---
@@ -126,6 +134,20 @@ items = []
 bullets = [] 
 item_spawn_timer = 0
 last_shot_time = 0
+
+# --- MUDANÇA 2: Variáveis de Animação do Player ---
+player_frame_index = 0 # Este agora é o índice DA SEQUÊNCIA
+player_last_frame_update = pygame.time.get_ticks()
+PLAYER_ANIMATION_SPEED_MS = 100 # ms (Velocidade da animação)
+
+# NOVO: A sequência de frames que você pediu (índices da lista)
+# player_animation_frames[0] = macaco1.png
+# player_animation_frames[1] = macaco2.png
+# player_animation_frames[2] = macaco3.png
+#
+# Sequência pedida: 2 - 1 - 3 - 1 ...
+# Sequência em ÍNDICES: 1 - 0 - 2 - 0 ...
+PLAYER_ANIMATION_SEQUENCE = [1, 0, 2, 0]
 
 # ----- VARIÁVEIS DE ESTADO -----
 current_score = 0
@@ -157,9 +179,9 @@ def draw_game(player, item_list, bullet_list, player_img):
     if player_img:
         screen.blit(player_img, player.topleft)
     else:
+        # Fallback se a animação não carregou
         pygame.draw.rect(screen, PLAYER_COLOR, player)
     
-    # Desenha os inimigos (agora com imagens de balões)
     for item in item_list:
         if item["image"]: 
             screen.blit(item["image"], item["rect"].topleft)
@@ -317,7 +339,8 @@ def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
 # ----------------------------------------------------------------------
 running = True
 while running:
-    elapsed_time_sec = (pygame.time.get_ticks() - start_time_ms) / 1000.0
+    current_time_ticks = pygame.time.get_ticks() 
+    elapsed_time_sec = (current_time_ticks - start_time_ms) / 1000.0
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -326,8 +349,7 @@ while running:
         
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE: 
-                current_time = pygame.time.get_ticks()
-                if current_time - last_shot_time > SHOOT_COOLDOWN:
+                if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
                     bullet_rect = pygame.Rect(
                         player_rect.right, 
                         player_rect.centery - BULLET_HEIGHT // 2, 
@@ -335,7 +357,7 @@ while running:
                         BULLET_HEIGHT
                     )
                     bullets.append(bullet_rect)
-                    last_shot_time = current_time
+                    last_shot_time = current_time_ticks 
 
     # --- Teclas (Controles Livres 4-direções) ---
     keys = pygame.key.get_pressed()
@@ -370,9 +392,8 @@ while running:
         item_type = random.choices(COLOR_TYPES, weights=[ITEM_PROBABILITIES[t] for t in COLOR_TYPES], k=1)[0]
         item_color = ITEM_COLORS[item_type]
         item_x = GAME_WIDTH + ITEM_IMAGE_WIDTH 
-        item_y = random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT) # Usa a nova altura para o spawn
+        item_y = random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT) 
         
-        # Cria o rect do item com o novo tamanho (largura, altura) da imagem
         new_item_rect = pygame.Rect(item_x, item_y, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
         items.append({"rect": new_item_rect, "color": item_color, "type": item_type, "image": balloon_images.get(item_type)})
 
@@ -415,9 +436,8 @@ while running:
                 score_vs_time.append((elapsed_time_sec, current_score))
                 stats_counts[item_type] += 1
 
-                current_time = pygame.time.get_ticks()
-                interval_sec = (current_time - last_collection_time) / 1000.0
-                last_collection_time = current_time
+                interval_sec = (current_time_ticks - last_collection_time) / 1000.0
+                last_collection_time = current_time_ticks
                 all_collection_intervals.append(interval_sec)
 
                 if interval_sec < 0.7:
@@ -426,7 +446,7 @@ while running:
                     stats_intervals["0.7-1.4"] += 1
                 elif interval_sec < 2.0:
                     stats_intervals["1.4-2.0"] += 1
-                elif interval_sec < 2.5: 
+                else: 
                     stats_intervals["2.0s+"] += 1 
 
                 items.pop(i_idx)
@@ -437,10 +457,27 @@ while running:
         
         if hit_detected:
             continue
+            
+    # --- MUDANÇA 3: Atualização da Animação do Player ---
+    if player_animation_frames: # Só atualiza se a animação foi carregada
+        if current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS:
+            player_last_frame_update = current_time_ticks
+            # Avança para o próximo item na *sequência* [1, 0, 2, 0]
+            player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
 
     # --- Renderização ---
     screen.fill(BLACK) 
-    draw_game(player_rect, items, bullets, player_image) 
+    
+    # --- MUDANÇA 3: Seleciona o frame correto para desenhar ---
+    current_player_img = None
+    if player_animation_frames:
+        # Pega o índice da sequência (ex: 1)
+        actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
+        # Pega a imagem real (ex: frame 1, que é 'macaco2.png')
+        current_player_img = player_animation_frames[actual_frame_index]
+
+    # Passa o frame ATUAL para a função de desenho
+    draw_game(player_rect, items, bullets, current_player_img)
 
     # --- Define os RECTs dos gráficos ---
     rect_grafico_1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
