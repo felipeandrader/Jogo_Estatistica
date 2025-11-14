@@ -448,7 +448,7 @@ while running:
     rect_grafico_3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
 
     draw_histogram(screen, stats_counts, COLOR_TYPES, ITEM_COLORS,
-                   "Contagem (Destruídos)", rect_grafico_1,
+                   "Contagem", rect_grafico_1,
                    expected_prob_func=lambda t: get_empirical_prob(t, stats_counts))
 
     draw_scatter_plot(screen, score_vs_time, rect_grafico_2, elapsed_time_sec)
