@@ -28,6 +28,9 @@ GRAPH_YELLOW = (255, 215, 0)
 FITTING_COLOR = (255, 0, 0)
 SCORE_POINT_COLOR = (0, 255, 255)
 
+#SCORE TO UNLOCK BOSS FIGHT
+SCORE_TO_BOSS = 2000
+
 # --- CONFIGURAÇÕES DE PROBABILIDADE E PONTUAÇÃO ---
 NEW_COLOR_NAME = "orange"
 NEW_COLOR_RGB = (255, 165, 0)
@@ -69,6 +72,10 @@ SHOOT_COOLDOWN = 200
 
 # Velocidade do jogador em pixels por segundo (para movimento fluido)
 PLAYER_MAX_VELOCITY = 400 
+
+# Tamanho da imagem do boss
+BOSS_IMAGE_WIDTH = 125
+BOSS_IMAGE_HEIGHT = 76
 
 # --- Inicialização do Pygame ---
 pygame.init()
@@ -143,6 +150,15 @@ except pygame.error as e:
     print(f"ERRO: Não foi possível carregar uma ou mais imagens de balões. Usando círculos. Detalhes: {e}")
     balloon_images = {} 
 
+
+#Carregar bloon_death_green - imagem do boss
+try:
+    boss_sprite = pygame.image.load("balaoboss.png").convert_alpha()
+    boss_sprite = pygame.transform.scale(boss_sprite, (BOSS_IMAGE_WIDTH, BOSS_IMAGE_HEIGHT))
+    print("Imagem do boss carregada com sucesso.")
+except pygame.error as e:
+    print(f"ERRO: Não foi possível carregar a imagem do boss. Usando círculo. Detalhes: {e}")
+    boss_sprite = None
 
 # ----------------------------------------------------------------------
 ## Funções de Desenho
@@ -325,10 +341,19 @@ def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
 # Defina a variável global current_score no topo do script principal
 global current_score
 current_score = 0
+# Snapshots para a cena do boss (serão preenchidos ao entrar na cena BOSS)
+boss_stats_counts = None
+boss_stats_intervals = None
+boss_score_vs_time = None
+boss_snapshot_elapsed = 0.0
+
+
 
 # Variáveis do Joystick (mantidas fora do loop principal, mas inicializadas dentro do main/run_game)
 joystick_x = 0.0
 joystick_y = 0.0
+
+player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_height // 2, player_width, player_height) 
 
 def run_game(screen):
     
@@ -337,7 +362,6 @@ def run_game(screen):
     last_speed_increase_time = pygame.time.get_ticks()
 
     # Variáveis do Jogo
-    player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_height // 2, player_width, player_height) 
     items = [] 
     bullets = [] 
     item_spawn_timer = 0
@@ -354,6 +378,7 @@ def run_game(screen):
     current_score = 0
     score_vs_time = [(0.0, 0)]
     start_time_ms = pygame.time.get_ticks()
+ 
 
     stats_counts = {"red": 0, "green": 0, "purple": 0, "orange": 0}
     stats_intervals = {"0-0.7s": 0, "0.7-1.4": 0, "1.4-2.0": 0, "2.0s+": 0} 
@@ -523,6 +548,17 @@ def run_game(screen):
             
             if hit_detected:
                 continue
+
+        if current_score >= SCORE_TO_BOSS:
+            print(f"BOSS FIGHT DESBLOQUEADA! Pontuação: {current_score}")
+            pygame.mixer.music.stop()
+            # Salva snapshot dos dados que serão usados na cena do boss
+            global boss_stats_counts, boss_stats_intervals, boss_score_vs_time, boss_snapshot_elapsed
+            boss_stats_counts = stats_counts.copy()
+            boss_stats_intervals = stats_intervals.copy()
+            boss_score_vs_time = score_vs_time.copy()
+            boss_snapshot_elapsed = elapsed_time_sec
+            return "BOSS_FIGHT" # Retorna para o loop principal
                 
         # --- Atualização da Animação do Player ---
         if player_animation_frames: 
@@ -568,6 +604,283 @@ def run_game(screen):
 
 
 # ----------------------------------------------------------------------
+# --- CENA DO BOSS (PREPARAÇÃO) ---
+# ----------------------------------------------------------------------
+
+#crie o rect do boss com as segunites propiedades: (1172, 362, 125, 76)
+boss_rect = pygame.Rect(962, 262, BOSS_IMAGE_WIDTH, BOSS_IMAGE_HEIGHT)
+
+def run_game_boss(screen):
+    # Mantém a pontuação atual (não reinicia)
+    global current_score
+
+    # Variáveis do Jogo (sem spawn de inimigos)
+    items = []  # não haverá novos itens
+    bullets = []
+    last_shot_time = 0
+
+    # Animação do player
+    player_frame_index = 0
+    player_last_frame_update = pygame.time.get_ticks()
+    PLAYER_ANIMATION_SPEED_MS = 100
+    PLAYER_ANIMATION_SEQUENCE = [1, 0, 2, 0]
+
+    start_time_ms = pygame.time.get_ticks()
+    last_collection_time_boss = start_time_ms
+    # Configura balões ao redor do boss (hexágono em volta de boss_rect)
+    boss_center_x, boss_center_y = boss_rect.center
+    radius_x = boss_rect.width // 2 + 100
+    radius_y = boss_rect.height // 2 + 100
+    angles_deg = [0, 60, 120, 180, 240, 300]
+
+    # Lista de vértices do hexágono (pontos de spawn/waypoints)
+    hexagon_points = []
+    for ang in angles_deg:
+        rad = math.radians(ang)
+        cx = int(boss_center_x + radius_x * math.cos(rad))
+        cy = int(boss_center_y + radius_y * math.sin(rad))
+        hexagon_points.append((cx, cy))
+
+    # Velocidade mediana dos balões (px/s)
+    BOSS_BALLOON_SPEED = 160
+
+    balloons_around_boss = []
+    for i, (cx, cy) in enumerate(hexagon_points):
+        chosen_type = random.choice(COLOR_TYPES)
+        sprite = balloon_images.get(chosen_type)
+        if sprite:
+            rect = sprite.get_rect(center=(cx, cy))
+        else:
+            rect = pygame.Rect(cx - ITEM_IMAGE_WIDTH // 2, cy - ITEM_IMAGE_HEIGHT // 2, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
+        target_idx = (i + 1) % len(hexagon_points)  # sentido horário
+        balloons_around_boss.append({
+            "type": chosen_type,
+            "image": sprite,
+            "rect": rect,
+            "target_idx": target_idx
+        })
+
+    # Usa os snapshots que foram preenchidos em run_game (desenha os gráficos existentes)
+    global boss_stats_counts, boss_stats_intervals, boss_score_vs_time, boss_snapshot_elapsed
+    if boss_stats_counts is None:
+        stats_counts_local = {k: 0 for k in COLOR_TYPES}
+    else:
+        stats_counts_local = boss_stats_counts.copy()
+
+    if boss_stats_intervals is None:
+        stats_intervals_local = {"0-0.7s": 0, "0.7-1.4": 0, "1.4-2.0": 0, "2.0s+": 0}
+    else:
+        stats_intervals_local = boss_stats_intervals.copy()
+
+    if boss_score_vs_time is None:
+        score_vs_time_local = [(0.0, current_score)]
+    else:
+        score_vs_time_local = boss_score_vs_time.copy()
+
+    # Mantemos o tempo do snapshot (não atualizamos os dados)
+    snapshot_elapsed = boss_snapshot_elapsed
+
+    running = True
+    while running:
+        dt = clock.tick(60) / 1000.0
+        current_time_ticks = pygame.time.get_ticks()
+        elapsed_time_sec = (current_time_ticks - start_time_ms) / 1000.0
+
+        # Reset de leitura do joystick por frame
+        global joystick, joystick_x, joystick_y, JOYSTICK_DEADZONE
+        joystick_x = 0.0
+        joystick_y = 0.0
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return "QUIT"
+
+            # Controles (movimento e tiro continuam funcionando)
+            if joystick:
+                if event.type == pygame.JOYAXISMOTION:
+                    if event.axis == 0:
+                        joystick_x = event.value
+                    elif event.axis == 1:
+                        joystick_y = event.value
+                elif event.type == pygame.JOYBUTTONDOWN:
+                    if event.button == 0:
+                        if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
+                            bullet_rect = pygame.Rect(player_rect.right, player_rect.centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
+                            bullets.append(bullet_rect)
+                            last_shot_time = current_time_ticks
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
+                        bullet_rect = pygame.Rect(player_rect.right, player_rect.centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
+                        bullets.append(bullet_rect)
+                        last_shot_time = current_time_ticks
+
+        # Movimento do jogador
+        keys = pygame.key.get_pressed()
+        move_x = 0.0
+        move_y = 0.0
+        if keys[pygame.K_UP] or keys[pygame.K_w]:
+            move_y -= 1.0
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            move_y += 1.0
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            move_x -= 1.0
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            move_x += 1.0
+
+        if joystick:
+            if abs(joystick_x) > JOYSTICK_DEADZONE:
+                move_x += joystick_x
+            if abs(joystick_y) > JOYSTICK_DEADZONE:
+                move_y += joystick_y
+
+        player_rect.x += move_x * PLAYER_MAX_VELOCITY * dt
+        player_rect.y += move_y * PLAYER_MAX_VELOCITY * dt
+
+        # Limites do jogador
+        if player_rect.top < 0:
+            player_rect.top = 0
+        if player_rect.bottom > GAME_HEIGHT:
+            player_rect.bottom = GAME_HEIGHT
+        if player_rect.left < 0:
+            player_rect.left = 0
+        if player_rect.right > GAME_WIDTH:
+            player_rect.right = GAME_WIDTH
+
+        # Sem spawn de inimigos: não adicionamos nada em items.
+
+        # Movimento rotatório dos balões: cada balão persegue o próximo vértice
+        for b in balloons_around_boss:
+            tx, ty = hexagon_points[b["target_idx"]]
+            cx, cy = b["rect"].center
+            dx = tx - cx
+            dy = ty - cy
+            dist = math.hypot(dx, dy)
+            step = BOSS_BALLOON_SPEED * dt
+            if dist <= max(4.0, step * 1.25):
+                b["rect"].center = (tx, ty)
+                b["target_idx"] = (b["target_idx"] + 1) % len(hexagon_points)
+            else:
+                nx = dx / dist if dist != 0 else 0
+                ny = dy / dist if dist != 0 else 0
+                cx += nx * step
+                cy += ny * step
+                b["rect"].center = (int(cx), int(cy))
+
+        # Ainda assim, balas podem atravessar a tela como feedback visual.
+        for i in range(len(bullets) - 1, -1, -1):
+            bullet = bullets[i]
+            bullet.x += BULLET_SPEED
+            if bullet.left > GAME_WIDTH:
+                bullets.pop(i)
+                continue
+
+            # Colisão PROJÉTIL - BALÕES DO BOSS
+            hit = False
+            for bi in range(len(balloons_around_boss) - 1, -1, -1):
+                b = balloons_around_boss[bi]
+                # Use colliderect entre rects
+                if bullet.colliderect(b["rect"]):
+                    # Atualiza pontuação
+                    b_type = b.get("type")
+                    current_score += ITEM_SCORES.get(b_type, 0)
+
+                    # Atualiza estatísticas locais (opcional)
+                    try:
+                        stats_counts_local[b_type] = stats_counts_local.get(b_type, 0) + 1
+                    except Exception:
+                        pass
+
+                    # Intervalos (similar à lógica do jogo principal)
+                    interval_sec = (current_time_ticks - last_collection_time_boss) / 1000.0
+                    last_collection_time_boss = current_time_ticks
+                    if interval_sec < 0.7:
+                        stats_intervals_local["0-0.7s"] = stats_intervals_local.get("0-0.7s", 0) + 1
+                    elif interval_sec < 1.4:
+                        stats_intervals_local["0.7-1.4"] = stats_intervals_local.get("0.7-1.4", 0) + 1
+                    elif interval_sec < 2.0:
+                        stats_intervals_local["1.4-2.0"] = stats_intervals_local.get("1.4-2.0", 0) + 1
+                    else:
+                        stats_intervals_local["2.0s+"] = stats_intervals_local.get("2.0s+", 0) + 1
+
+                    # Atualiza série de score vs tempo local (mantendo continuidade)
+                    score_time = snapshot_elapsed + elapsed_time_sec
+                    score_vs_time_local.append((score_time, current_score))
+
+                    # Remove balão e projétil
+                    balloons_around_boss.pop(bi)
+                    bullets.pop(i)
+                    hit = True
+                    break
+            if hit:
+                continue
+
+        # Atualização de animação do player
+        if player_animation_frames:
+            if current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS:
+                player_last_frame_update = current_time_ticks
+                player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
+
+        # Colisão PROJÉTIL-INIMIGO 
+
+        # Renderização
+        screen.fill(BLACK)
+        current_player_img = None
+        if player_animation_frames:
+            actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
+            current_player_img = player_animation_frames[actual_frame_index]
+
+        draw_game(player_rect, items, bullets, current_player_img)
+
+        # Desenha só os 6 balões ao redor
+        pygame.draw.rect(screen, (200, 50, 50), boss_rect, width=4)
+        for b in balloons_around_boss:
+            if b["image"]:
+                screen.blit(b["image"], b["rect"].topleft)
+            else:
+                # Fallback: desenha círculo caso sprites não carregaram
+                center = b["rect"].center
+                pygame.draw.circle(screen, ITEM_COLORS.get(b["type"], WHITE), center, ITEM_IMAGE_WIDTH // 2)
+
+        screen.blit(boss_sprite, boss_rect.topleft)  # Desenha a imagem do boss
+        #pygame.draw.rect(screen, (255, 0, 0), boss_rect, 2)  # Desenha o retângulo do boss em vermelho
+
+        # HUD da cena do boss
+        score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
+        boss_text = title_font.render("CENA DO BOSS - Prepare-se!", True, WHITE)
+        screen.blit(score_text, (10, 10))
+        screen.blit(boss_text, (10, 45))
+
+        # Define os RECTs dos gráficos (desenha os mesmos gráficos, sem atualizar os dados)
+        rect_grafico_1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        rect_grafico_2 = pygame.Rect(GRAPH_X_SPLIT_1, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        rect_grafico_3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+
+        INTERVAL_KEYS_LOCAL = list(stats_intervals_local.keys())
+        INTERVAL_COLORS_LOCAL = {key: GRAPH_YELLOW for key in INTERVAL_KEYS_LOCAL}
+
+        draw_histogram(screen, stats_counts_local, COLOR_TYPES, ITEM_COLORS,
+                "Contagem", rect_grafico_1,
+                expected_prob_func=lambda t: get_empirical_prob(t, stats_counts_local))
+
+        # Use snapshot_elapsed + elapsed_time_sec so new hits appear in time axis
+        draw_scatter_plot(screen, score_vs_time_local, rect_grafico_2, snapshot_elapsed + elapsed_time_sec)
+
+        draw_histogram(screen, stats_intervals_local, INTERVAL_KEYS_LOCAL, INTERVAL_COLORS_LOCAL,
+                "Intervalo de Destruição", rect_grafico_3,
+                expected_prob_func=lambda k: get_empirical_prob(k, stats_intervals_local))
+
+        # Divisórias inferiores
+        pygame.draw.line(screen, WHITE, (0, GAME_HEIGHT), (SCREEN_WIDTH, GAME_HEIGHT), 3)
+        pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_1, GAME_HEIGHT), (GRAPH_X_SPLIT_1, SCREEN_HEIGHT), 3)
+        pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_2, GAME_HEIGHT), (GRAPH_X_SPLIT_2, SCREEN_HEIGHT), 3)
+
+        pygame.display.flip()
+
+        # Por enquanto, permanecemos nesta cena até o jogador fechar ou até você integrar a lógica do boss.
+
+# ----------------------------------------------------------------------
 # --- LOOP PRINCIPAL DA APLICAÇÃO (GERENCIADOR DE ESTADO) ---
 # ----------------------------------------------------------------------
 
@@ -596,9 +909,23 @@ def main():
                 final_score = current_score 
                 print(f"Fim de Jogo. Pontuação Final: {final_score}")
                 current_state = "MENU" 
-            elif result == "QUIT":
-                break 
 
+            elif result == "BOSS_FIGHT":
+                current_state = "BOSS"
+
+            elif result == "QUIT":
+                break
+        
+        elif current_state == "BOSS":
+            result = run_game_boss(screen)
+
+            if result == "GAME_OVER":
+                final_score = current_score 
+                print(f"Fim de Jogo. Pontuação Final: {final_score}")
+                current_state = "MENU" 
+
+            elif result == "QUIT":
+                break
     pygame.quit()
 
 if __name__ == "__main__":
