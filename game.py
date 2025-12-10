@@ -160,6 +160,15 @@ except pygame.error as e:
     print(f"ERRO: Não foi possível carregar a imagem do boss. Usando círculo. Detalhes: {e}")
     boss_sprite = None
 
+#Carregar vida_do_jogador - imagem da vida do jogador
+try:
+    life_sprite = pygame.image.load("vida_do_jogador.png").convert_alpha()
+    life_sprite = pygame.transform.scale(life_sprite, (128, 128))
+    print("Imagem da vida do jogador carregada com sucesso.")
+except pygame.error as e:
+    print(f"ERRO: Não foi possível carregar a imagem da vida do jogador. Usando quadrado vermelho. Detalhes: {e}")
+    life_sprite = None
+
 # ----------------------------------------------------------------------
 ## Funções de Desenho
 # ----------------------------------------------------------------------
@@ -335,6 +344,26 @@ def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
     surface.blit(time_label, time_label_rect)
 
 # ----------------------------------------------------------------------
+# --- HUD/UTILS ---
+# ----------------------------------------------------------------------
+
+#Em vez de desenhar quadrados, faça blit com a imagem carregada life_sprite
+#Faça com que o desenho seja da direita para a esquerda
+def draw_player_lives(surface, lives):
+    size = 64
+    spacing = 20
+    margin = 5
+    offset_x = 50
+    total_width = size * lives + spacing * max(0, lives - 1)
+    start_x = SCREEN_WIDTH - offset_x - margin - total_width
+    y = margin
+    for i in range(lives):
+        if life_sprite:
+            surface.blit(life_sprite, (start_x + i * (size + spacing), y))
+        else:
+            rect = pygame.Rect(start_x + i * (size + spacing), y, size, size)
+            pygame.draw.rect(surface, (220, 50, 50), rect)
+
 # --- FUNÇÃO PRINCIPAL DO JOGO (STATE: GAME) ---
 # ----------------------------------------------------------------------
 
@@ -347,7 +376,9 @@ boss_stats_intervals = None
 boss_score_vs_time = None
 boss_snapshot_elapsed = 0.0
 
-
+# Vidas do jogador (compartilhado entre GAME e BOSS)
+global player_lives
+player_lives = 3
 
 # Variáveis do Joystick (mantidas fora do loop principal, mas inicializadas dentro do main/run_game)
 joystick_x = 0.0
@@ -378,8 +409,9 @@ def run_game(screen):
     current_score = 0
     score_vs_time = [(0.0, 0)]
     start_time_ms = pygame.time.get_ticks()
- 
 
+    global player_lives
+ 
     stats_counts = {"red": 0, "green": 0, "purple": 0, "orange": 0}
     stats_intervals = {"0-0.7s": 0, "0.7-1.4": 0, "1.4-2.0": 0, "2.0s+": 0} 
     INTERVAL_KEYS = list(stats_intervals.keys())
@@ -504,12 +536,15 @@ def run_game(screen):
                 items.pop(i)
                 continue
 
-            # Colisão com JOGADOR 
+            # Colisão com JOGADOR: perde 1 vida; Game Over somente quando vidas <= 0
             if player_rect.colliderect(item["rect"]):
-                print("GAME OVER! Inimigo atingiu o jogador.")
-                pygame.mixer.music.stop()
-                items.pop(i) 
-                return "GAME_OVER" 
+                items.pop(i)
+                player_lives -= 1
+                print(f"Jogador atingido! Vidas restantes: {player_lives}")
+                if player_lives <= 0:
+                    print("GAME OVER! Vidas esgotadas.")
+                    pygame.mixer.music.stop()
+                    return "GAME_OVER"
                 
 
         # Colisão PROJÉTIL-INIMIGO 
@@ -578,6 +613,8 @@ def run_game(screen):
         
         score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
         screen.blit(score_text, (10, 10))
+        # HUD: vidas
+        draw_player_lives(screen, player_lives)
 
 
         # --- Define os RECTs dos gráficos ---
@@ -613,6 +650,7 @@ boss_rect = pygame.Rect(962, 262, BOSS_IMAGE_WIDTH, BOSS_IMAGE_HEIGHT)
 def run_game_boss(screen):
     # Mantém a pontuação atual (não reinicia)
     global current_score
+    global player_lives
 
     # Variáveis do Jogo (sem spawn de inimigos)
     items = []  # não haverá novos itens
@@ -822,6 +860,18 @@ def run_game_boss(screen):
                 player_last_frame_update = current_time_ticks
                 player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
 
+        # Colisão do jogador com balões do boss (perde 1 vida ao tocar)
+        for bi in range(len(balloons_around_boss) - 1, -1, -1):
+            b = balloons_around_boss[bi]
+            if player_rect.colliderect(b["rect"]):
+                balloons_around_boss.pop(bi)  # remove o balão que acertou
+                player_lives -= 1
+                print(f"Jogador atingido pelo boss! Vidas restantes: {player_lives}")
+                if player_lives <= 0:
+                    print("GAME OVER! Vidas esgotadas na cena do boss.")
+                    pygame.mixer.music.stop()
+                    return "GAME_OVER"
+
         # Colisão PROJÉTIL-INIMIGO 
 
         # Renderização
@@ -851,6 +901,8 @@ def run_game_boss(screen):
         boss_text = title_font.render("CENA DO BOSS - Prepare-se!", True, WHITE)
         screen.blit(score_text, (10, 10))
         screen.blit(boss_text, (10, 45))
+        # HUD: vidas
+        draw_player_lives(screen, player_lives)
 
         # Define os RECTs dos gráficos (desenha os mesmos gráficos, sem atualizar os dados)
         rect_grafico_1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
@@ -887,6 +939,7 @@ def run_game_boss(screen):
 def main():
     # Garante que o joystick esteja inicializado globalmente para toda a aplicação
     global joystick
+    global player_lives
     
     current_state = "MENU"
     
@@ -896,6 +949,8 @@ def main():
             result = menu.show_menu(screen, SCREEN_WIDTH, SCREEN_HEIGHT, title_font, main_font)
             if result == "PLAY":
                 current_state = "GAME"
+                # Reset de vidas ao iniciar um novo jogo
+                player_lives = 3
                 try:
                     pygame.mixer.music.play(-1) 
                 except pygame.error:
