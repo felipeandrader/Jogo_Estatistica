@@ -180,11 +180,36 @@ def get_empirical_prob(item_type, current_counts):
     return current_counts.get(item_type, 0) / float(total_count)
 
 
-def draw_game(player, item_list, bullet_list, player_img):
+def draw_game(player, item_list, bullet_list, player_img, pos_hit_until_ms=0, current_time_ticks=None):
     pygame.draw.rect(screen, LIGHT_BLUE, (0, 0, GAME_WIDTH, GAME_HEIGHT))
-    
+
+    # Efeito de piscar durante a janela pos-hit: alterna alpha, mantendo opacidade baixa
     if player_img:
-        screen.blit(player_img, player.topleft)
+        pos_hit_active = False
+        if current_time_ticks is not None and current_time_ticks < pos_hit_until_ms:
+            pos_hit_active = True
+
+        if pos_hit_active:
+            # Parâmetros do piscar
+            BLINK_INTERVAL_MS = 150
+            ALPHA_LOW = 80
+            ALPHA_HIGH = 160
+            try:
+                phase = (current_time_ticks // BLINK_INTERVAL_MS) % 2
+                alpha_val = ALPHA_LOW if phase == 0 else ALPHA_HIGH
+                temp_img = player_img.copy()
+                temp_img.set_alpha(int(alpha_val))
+                screen.blit(temp_img, player.topleft)
+            except Exception:
+                # Fallback: se não for possível ajustar alpha, desenha normalmente com baixa opacidade
+                try:
+                    temp_img = player_img.copy()
+                    temp_img.set_alpha(ALPHA_LOW)
+                    screen.blit(temp_img, player.topleft)
+                except Exception:
+                    screen.blit(player_img, player.topleft)
+        else:
+            screen.blit(player_img, player.topleft)
     else:
         pygame.draw.rect(screen, PLAYER_COLOR, player)
     
@@ -397,6 +422,8 @@ def run_game(screen):
     bullets = [] 
     item_spawn_timer = 0
     last_shot_time = 0
+    # Variável para controlar o efeito "pos-hit" (timestamp em ms até o qual o efeito está ativo)
+    pos_hit_until_ms = 0
 
     # Variáveis de Animação
     player_frame_index = 0 
@@ -538,8 +565,15 @@ def run_game(screen):
 
             # Colisão com JOGADOR: perde 1 vida; Game Over somente quando vidas <= 0
             if player_rect.colliderect(item["rect"]):
+                # Se estiver no estado pos-hit (invencível), ignoramos a colisão
+                if current_time_ticks < pos_hit_until_ms:
+                    # Não removemos o item nem diminuímos vida
+                    continue
+
                 items.pop(i)
                 player_lives -= 1
+                # ativa o efeito pos-hit por 1 segundo (invencibilidade)
+                pos_hit_until_ms = current_time_ticks + 1000
                 print(f"Jogador atingido! Vidas restantes: {player_lives}")
                 if player_lives <= 0:
                     print("GAME OVER! Vidas esgotadas.")
@@ -609,7 +643,7 @@ def run_game(screen):
             actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
             current_player_img = player_animation_frames[actual_frame_index]
 
-        draw_game(player_rect, items, bullets, current_player_img)
+        draw_game(player_rect, items, bullets, current_player_img, pos_hit_until_ms, current_time_ticks)
         
         score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
         screen.blit(score_text, (10, 10))
@@ -656,6 +690,8 @@ def run_game_boss(screen):
     items = []  # não haverá novos itens
     bullets = []
     last_shot_time = 0
+    # Variável para controlar o efeito "pos-hit" na cena do boss
+    pos_hit_until_ms = 0
 
     # Animação do player
     player_frame_index = 0
@@ -864,8 +900,14 @@ def run_game_boss(screen):
         for bi in range(len(balloons_around_boss) - 1, -1, -1):
             b = balloons_around_boss[bi]
             if player_rect.colliderect(b["rect"]):
+                # Se estiver no estado pos-hit (invencível), ignoramos a colisão
+                if current_time_ticks < pos_hit_until_ms:
+                    continue
+
                 balloons_around_boss.pop(bi)  # remove o balão que acertou
                 player_lives -= 1
+                # Ativa o efeito pos-hit por 1 segundo
+                pos_hit_until_ms = current_time_ticks + 1000
                 print(f"Jogador atingido pelo boss! Vidas restantes: {player_lives}")
                 if player_lives <= 0:
                     print("GAME OVER! Vidas esgotadas na cena do boss.")
@@ -881,7 +923,7 @@ def run_game_boss(screen):
             actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
             current_player_img = player_animation_frames[actual_frame_index]
 
-        draw_game(player_rect, items, bullets, current_player_img)
+        draw_game(player_rect, items, bullets, current_player_img, pos_hit_until_ms, current_time_ticks)
 
         # Desenha só os 6 balões ao redor
         pygame.draw.rect(screen, (200, 50, 50), boss_rect, width=4)
