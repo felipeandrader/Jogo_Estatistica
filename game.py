@@ -110,6 +110,15 @@ try:
 except pygame.error:
     print(f"AVISO: Não foi possível carregar o arquivo '{MUSIC_FILE}'.")
 
+# -- Carregar Som ---
+try:
+    HIT_SOUND_FILE = "som_de_hit.wav"
+    hit_sound = pygame.mixer.Sound(HIT_SOUND_FILE)
+    hit_sound.set_volume(0.1) 
+    print(f"Efeito sonoro {HIT_SOUND_FILE} carregado.")
+except pygame.error:
+    print(f"AVISO: Não foi possível carregar o arquivo '{HIT_SOUND_FILE}'.")
+
 
 # --- Carregar Imagem do Jogador ---
 player_width = 110  
@@ -569,7 +578,8 @@ def run_game(screen):
                 if current_time_ticks < pos_hit_until_ms:
                     # Não removemos o item nem diminuímos vida
                     continue
-
+                
+                hit_sound.play()
                 items.pop(i)
                 player_lives -= 1
                 # ativa o efeito pos-hit por 1 segundo (invencibilidade)
@@ -904,6 +914,7 @@ def run_game_boss(screen):
                 if current_time_ticks < pos_hit_until_ms:
                     continue
 
+                hit_sound.play()
                 balloons_around_boss.pop(bi)  # remove o balão que acertou
                 player_lives -= 1
                 # Ativa o efeito pos-hit por 1 segundo
