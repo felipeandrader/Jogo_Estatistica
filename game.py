@@ -29,7 +29,7 @@ FITTING_COLOR = (255, 0, 0)
 SCORE_POINT_COLOR = (0, 255, 255)
 
 #SCORE TO UNLOCK BOSS FIGHT
-SCORE_TO_BOSS = 2000
+SCORE_TO_BOSS = 200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 
 # --- CONFIGURAÇÕES DE PROBABILIDADE E PONTUAÇÃO ---
 NEW_COLOR_NAME = "orange"
@@ -172,7 +172,7 @@ except pygame.error as e:
 #Carregar vida_do_jogador - imagem da vida do jogador
 try:
     life_sprite = pygame.image.load("vida_do_jogador.png").convert_alpha()
-    life_sprite = pygame.transform.scale(life_sprite, (128, 128))
+    life_sprite = pygame.transform.scale(life_sprite, (64, 64))
     print("Imagem da vida do jogador carregada com sucesso.")
 except pygame.error as e:
     print(f"ERRO: Não foi possível carregar a imagem da vida do jogador. Usando quadrado vermelho. Detalhes: {e}")
@@ -384,7 +384,7 @@ def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
 #Em vez de desenhar quadrados, faça blit com a imagem carregada life_sprite
 #Faça com que o desenho seja da direita para a esquerda
 def draw_player_lives(surface, lives):
-    size = 64
+    size = 20
     spacing = 20
     margin = 5
     offset_x = 50
