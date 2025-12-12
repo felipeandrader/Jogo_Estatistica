@@ -87,7 +87,8 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Monkey Runners")
 clock = pygame.time.Clock() 
 main_font = pygame.font.SysFont("Consolas", 18) 
-title_font = pygame.font.SysFont("Consolas", 26, bold=True)
+title_font = pygame.font.Font("LuckiestGuy-Regular.ttf", 64)
+second_font = pygame.font.Font("LuckiestGuy-Regular.ttf", 26)
 
 # --- Configuração do Joystick Global ---
 joystick = None
@@ -119,12 +120,23 @@ try:
 except pygame.error:
     print(f"AVISO: Não foi possível carregar o arquivo '{HIT_SOUND_FILE}'.")
 
+# --- Carregar background do menu ---
+try:
+    MENU_BG_FILE = "menu_.png"
+    menu_bg = pygame.image.load(MENU_BG_FILE).convert()
+    menu_bg = pygame.transform.scale(menu_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    print(f"Background {MENU_BG_FILE} carregado.")
+except pygame.error:
+    menu_bg = None
+    print(f"AVISO: Não foi possível carregar '{MENU_BG_FILE}'.")
+
 
 # --- Carregar Imagem do Jogador ---
 player_width = 110  
 player_height = 90 
 player_animation_frames = [] 
 player_filenames = ["macaco1.png", "macaco2.png", "macaco3.png"] 
+
 
 try:
     for filename in player_filenames: 
@@ -135,7 +147,8 @@ try:
 except pygame.error as e:
     print(f"ERRO: Não foi possível carregar a animação 'macaco*.png'. Usando quadrado azul. Detalhes: {e}")
     player_animation_frames = []
-    
+
+
 
 # --- Carregar Imagens dos Balões (Inimigos) ---
 ITEM_IMAGE_WIDTH = 60 
@@ -240,7 +253,7 @@ def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rec
     graph_x_start = bounds_rect.left + 30 
     graph_y_bottom = bounds_rect.bottom - 30 
 
-    title_text = title_font.render(title, True, WHITE)
+    title_text = second_font.render(title, True, WHITE)
     surface.blit(title_text, (bounds_rect.left + (bounds_rect.width - title_text.get_width()) // 2, bounds_rect.top + 10))
 
     total_count = sum(data_dict.values())
@@ -317,7 +330,7 @@ def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rec
 def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
     pygame.draw.rect(screen, GRAY, bounds_rect) 
     
-    graph_title_text = title_font.render("Pontuação x Tempo", True, WHITE)
+    graph_title_text = second_font.render("Pontuação x Tempo", True, WHITE)
     surface.blit(graph_title_text, (bounds_rect.left + (bounds_rect.width - graph_title_text.get_width()) // 2, bounds_rect.top + 20))
 
     MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, MARGIN_BOTTOM = 60, 30, 50, 50 
@@ -655,7 +668,7 @@ def run_game(screen):
 
         draw_game(player_rect, items, bullets, current_player_img, pos_hit_until_ms, current_time_ticks)
         
-        score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
+        score_text = second_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
         screen.blit(score_text, (10, 10))
         # HUD: vidas
         draw_player_lives(screen, player_lives)
@@ -950,8 +963,8 @@ def run_game_boss(screen):
         #pygame.draw.rect(screen, (255, 0, 0), boss_rect, 2)  # Desenha o retângulo do boss em vermelho
 
         # HUD da cena do boss
-        score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
-        boss_text = title_font.render("CENA DO BOSS - Prepare-se!", True, WHITE)
+        score_text = second_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
+        boss_text = second_font.render("CENA DO BOSS - Prepare-se!", True, WHITE)
         screen.blit(score_text, (10, 10))
         screen.blit(boss_text, (10, 45))
         # HUD: vidas
@@ -999,7 +1012,7 @@ def main():
     while True:
         if current_state == "MENU":
             # Assume que menu.show_menu existe e retorna "PLAY" ou "QUIT"
-            result = menu.show_menu(screen, SCREEN_WIDTH, SCREEN_HEIGHT, title_font, main_font)
+            result = menu.show_menu(screen, SCREEN_WIDTH, SCREEN_HEIGHT, title_font, main_font, menu_bg)
             if result == "PLAY":
                 current_state = "GAME"
                 # Reset de vidas ao iniciar um novo jogo
