@@ -31,24 +31,22 @@ class ParallaxBackground:
     def update(self, game_speed, dt):
         """Agora recebe dt para garantir movimento suave no tempo"""
         for layer in self.layers:
-            # Cálculo: Velocidade * Fator * Tempo
-            # O movimento agora é em PIXELS POR SEGUNDO, não por frame.
-            move_amount = (game_speed * layer["speed_factor"]) * dt
+            # ALTERAÇÃO AQUI: Removemos o "* dt"
+            # Agora ele vai mover uma fração direta da velocidade do jogo a cada loop.
+            move_amount = (game_speed * layer["speed_factor"])
             
             layer["x"] -= move_amount
             
-            # Loop suave usando soma (evita reset brusco para 0)
+            # Mantemos o loop suave
             if layer["x"] <= -self.width:
                 layer["x"] += self.width
 
     def draw(self, screen):
         for layer in self.layers:
-            # 'round' é o segredo aqui. 'int' corta (4.9 vira 4). 'round' arredonda (4.9 vira 5).
-            # Isso faz a animação parecer muito mais fluida.
-            x_pos = round(layer["x"])
+            # ALTERAÇÃO AQUI: Troque round() por int() para estabilidade
+            x_pos = int(layer["x"])
             
             screen.blit(layer["image"], (x_pos, 0))
-            # Desenha a continuação apenas se necessário (otimização leve)
             if x_pos < 0:
                 screen.blit(layer["image"], (x_pos + self.width, 0))
 
@@ -594,7 +592,7 @@ def run_game(screen, num_players=1):
     last_collection_time = pygame.time.get_ticks()
 
     # Aumente este valor se ainda achar lento (ex: 5.0, 10.0, etc)
-    PARALLAX_SPEED_MULTIPLIER = 100.0
+    PARALLAX_SPEED_MULTIPLIER = 0.2
 
     # --- CONFIGURAÇÃO DO PARALLAX ---
     bg_files = [
@@ -624,10 +622,10 @@ def run_game(screen, num_players=1):
         global ITEM_SPEED_INTERVAL, ITEM_SPEED_INCREASE
         if (current_time_ticks - last_speed_increase_time) / 1000.0 >= ITEM_SPEED_INTERVAL:
             current_item_speed += ITEM_SPEED_INCREASE
-            parallax_bg.update(current_item_speed * PARALLAX_SPEED_MULTIPLIER, dt)
+            
             last_speed_increase_time = current_time_ticks
             print(f"Dificuldade Aumentada! Velocidade: {current_item_speed:.2f}")
-
+        parallax_bg.update(current_item_speed * PARALLAX_SPEED_MULTIPLIER, dt)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return "QUIT"
