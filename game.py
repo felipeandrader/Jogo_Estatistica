@@ -1,3 +1,57 @@
+class ParallaxBackground:
+    def __init__(self, screen_width, screen_height, image_files, speeds):
+        self.width = screen_width
+        self.height = screen_height
+        self.layers = []
+        
+        for idx, filename in enumerate(image_files):
+            try:
+                # Otimização: .convert() para fundos opacos (camada 0) é mais rápido
+                if idx == 0:
+                    img = pygame.image.load(filename).convert()
+                else:
+                    img = pygame.image.load(filename).convert_alpha()
+                    
+                img = pygame.transform.scale(img, (screen_width, screen_height))
+                
+                self.layers.append({
+                    "image": img,
+                    "speed_factor": speeds[idx],
+                    "x": 0.0 # Float para precisão
+                })
+                print(f"Camada {idx+1} carregada: {filename}")
+            except pygame.error:
+                print(f"Placeholder criado para {filename}")
+                surf = pygame.Surface((screen_width, screen_height))
+                color_val = (50 + idx * 20) % 255
+                surf.fill((color_val, 100, 200))
+                if idx > 0: surf.set_colorkey((0,0,0)); surf.set_alpha(150)
+                self.layers.append({"image": surf, "speed_factor": speeds[idx], "x": 0.0})
+
+    def update(self, game_speed, dt):
+        """Agora recebe dt para garantir movimento suave no tempo"""
+        for layer in self.layers:
+            # Cálculo: Velocidade * Fator * Tempo
+            # O movimento agora é em PIXELS POR SEGUNDO, não por frame.
+            move_amount = (game_speed * layer["speed_factor"]) * dt
+            
+            layer["x"] -= move_amount
+            
+            # Loop suave usando soma (evita reset brusco para 0)
+            if layer["x"] <= -self.width:
+                layer["x"] += self.width
+
+    def draw(self, screen):
+        for layer in self.layers:
+            # 'round' é o segredo aqui. 'int' corta (4.9 vira 4). 'round' arredonda (4.9 vira 5).
+            # Isso faz a animação parecer muito mais fluida.
+            x_pos = round(layer["x"])
+            
+            screen.blit(layer["image"], (x_pos, 0))
+            # Desenha a continuação apenas se necessário (otimização leve)
+            if x_pos < 0:
+                screen.blit(layer["image"], (x_pos + self.width, 0))
+
 import pygame
 import random
 import math
@@ -82,7 +136,7 @@ pygame.font.init()
 pygame.mixer.init()
 pygame.joystick.init()
 
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), vsync=1)
 pygame.display.set_caption("Monkey Runners")
 clock = pygame.time.Clock()
 main_font = pygame.font.SysFont("Consolas", 18)
@@ -517,6 +571,26 @@ def run_game(screen, num_players=1):
     INTERVAL_COLORS = {key: GRAPH_YELLOW for key in INTERVAL_KEYS}
     last_collection_time = pygame.time.get_ticks()
 
+    # Aumente este valor se ainda achar lento (ex: 5.0, 10.0, etc)
+    PARALLAX_SPEED_MULTIPLIER = 5000.0
+
+    # --- CONFIGURAÇÃO DO PARALLAX ---
+    bg_files = [
+        "forest_sky.png",      # Fundo total (Céu/Estrelas)
+        "forest_short.png",   # Nuvens distantes
+        "forest_mountain.png",# Montanhas longe
+        "forest_moon.png",  # Prédios/Cidade
+        "forest_mid.png",  # Árvores fundo
+        "forest_long.png", # Arbustos perto
+        "forest_back.png"      # Chão onde o macaco pisa (Transparente em cima)
+    ]
+    
+    # Velocidades: O céu (0.1) é lento, o chão (1.0) acompanha a velocidade dos itens
+    bg_speeds = [0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0]
+    
+    # Cria o objeto Parallax
+    parallax_bg = ParallaxBackground(SCREEN_WIDTH, SCREEN_HEIGHT, bg_files, bg_speeds)
+
     # --- Loop Principal ---
     running = True
     while running:
@@ -528,6 +602,7 @@ def run_game(screen, num_players=1):
         global ITEM_SPEED_INTERVAL, ITEM_SPEED_INCREASE
         if (current_time_ticks - last_speed_increase_time) / 1000.0 >= ITEM_SPEED_INTERVAL:
             current_item_speed += ITEM_SPEED_INCREASE
+            parallax_bg.update(current_item_speed * PARALLAX_SPEED_MULTIPLIER, dt)
             last_speed_increase_time = current_time_ticks
             print(f"Dificuldade Aumentada! Velocidade: {current_item_speed:.2f}")
 
@@ -723,8 +798,10 @@ def run_game(screen, num_players=1):
             player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
 
         # --- Renderização ---
-        screen.fill(BLACK)
-        pygame.draw.rect(screen, LIGHT_BLUE, (0, 0, GAME_WIDTH, GAME_HEIGHT))
+        screen.fill(BLACK) # Limpa a tela
+
+        # Desenha o Parallax (Fundo)
+        parallax_bg.draw(screen)
 
         # Índice do frame atual
         frame_idx = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
