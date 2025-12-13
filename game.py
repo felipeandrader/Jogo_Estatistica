@@ -180,6 +180,15 @@ try:
 except pygame.error:
     print(f"AVISO: Não foi possível carregar o arquivo '{HIT_SOUND_FILE}'.")
 
+# -- Carregar som estorando balão ---
+try:
+    POP_SOUND_FILE = "estorar_balao.wav"
+    pop_sound = pygame.mixer.Sound(POP_SOUND_FILE)
+    pop_sound.set_volume(0.1)
+    print(f"Efeito sonoro {POP_SOUND_FILE} carregado.")
+except pygame.error:
+    print(f"AVISO: Não foi possível carregar o arquivo '{POP_SOUND_FILE}'.")
+
 # --- Carregar background do menu ---
 try:
     MENU_BG_FILE = "menu_.png"
@@ -772,6 +781,12 @@ def run_game(screen, num_players=1):
                     elif interval < 2.0: stats_intervals["1.4-2.0"] += 1
                     else: stats_intervals["2.0s+"] += 1
 
+                    # Toca som de acerto (se disponível)
+                    try:
+                        pop_sound.play()
+                    except Exception:
+                        pass
+
                     # --- GATILHO DA EXPLOSÃO ---
                     # Verifica se existe animação para este tipo, senão remove logo
                     if item_type in explosion_animations and explosion_animations[item_type]:
@@ -1074,6 +1089,12 @@ def run_game_boss(screen, num_players=1):
                     else: stats_intervals_local["2.0s+"] += 1
 
                     score_vs_time_local.append((snapshot_elapsed + elapsed_time_sec, current_score))
+
+                    # Toca som de acerto no boss (se disponível)
+                    try:
+                        hit_sound.play()
+                    except Exception:
+                        pass
                     
                     # --- GATILHO EXPLOSÃO (Boss) ---
                     if b["type"] in explosion_animations and explosion_animations[b["type"]]:
