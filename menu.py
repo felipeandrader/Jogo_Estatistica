@@ -47,29 +47,26 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
     # --- Configuração dos Botões ---
     button_width = 246
     button_height = 217
-    spacing = 20
+    spacing = 100
     center_y = screen_height // 2
-    
-    # Criamos uma lista de dicionários para facilitar a navegação por índice
-    # Índice 0: 1 Jogador, Índice 1: 2 Jogadores, Índice 2: Sair
+
+    # Ajuste do tamanho do botão de 2 Jogadores
+    button_2p_width = 300
+    button_2p_height = 120
+
+    # Criamos uma lista de dicionários (removendo o botão SAIR)
     menu_options = [
         {
-            "rect": pygame.Rect((screen_width // 2) - (button_width // 2), center_y - button_height - spacing, button_width, button_height),
+            "rect": pygame.Rect((screen_width // 2) - (button_width // 2), center_y - button_height + spacing, button_width, button_height),
             "label": "1 JOGADOR",
             "action": "PLAY",
             "color_selected": GREEN_HOVER
         },
         {
-            "rect": pygame.Rect((screen_width // 2) - (button_width // 2), center_y, button_width, button_height),
+            "rect": pygame.Rect((screen_width // 2) - (button_2p_width // 2), center_y + spacing, button_2p_width, button_2p_height),
             "label": "2 JOGADORES",
             "action": "PLAY_2P",
             "color_selected": BLUE_HOVER
-        },
-        {
-            "rect": pygame.Rect((screen_width // 2) - (button_width // 2), center_y + button_height + spacing, button_width, button_height),
-            "label": "SAIR",
-            "action": "QUIT",
-            "color_selected": RED_HOVER
         }
     ]
 
@@ -177,43 +174,35 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
             offset=2
         )
 
-        title_text = title_font.render("MONKEY RUNNERS", True, WHITE)
-        title_rect = title_text.get_rect(center=(screen_width // 2, screen_height // 4))
-        screen.blit(title_text, title_rect)
-
-        # Desenhar Botões
+        # Desenhar Botão 2 Jogadores (retângulo + texto)
         for i, option in enumerate(menu_options):
+            if i == 0:
+                # O botão de 1 jogador será desenhado com sprites mais abaixo
+                continue
             is_selected = (i == selected_index)
             rect = option["rect"]
-            
-            # Cor do botão
+
             color = option["color_selected"] if is_selected else BLACK
-            
-            # Se estiver selecionado, desenha uma borda branca ou amarela para destacar
             if is_selected:
-                pygame.draw.rect(screen, WHITE, rect.inflate(6, 6), border_radius=5)
-            
-            pygame.draw.rect(screen, color, rect, border_radius=5)
-            
-            # Texto
+                pygame.draw.rect(screen, WHITE, rect.inflate(6, 6), border_radius=10)
+            pygame.draw.rect(screen, color, rect, border_radius=10)
+
             text_surf = main_font.render(option["label"], True, WHITE)
             text_rect = text_surf.get_rect(center=rect.center)
             screen.blit(text_surf, text_rect)
 
-        # Cores de Hover / Sprites
-
-        # Botão Jogar com sprites
-        '''if play_hover and play_btn_img_hover:
-            screen.blit(play_btn_img_hover, play_button_rect.topleft)
+        # Botão Jogar com sprites (default e hover)
+        play_rect = menu_options[0]["rect"]
+        play_hover = play_rect.collidepoint(mouse_pos)
+        if play_hover and play_btn_img_hover:
+            screen.blit(play_btn_img_hover, play_rect.topleft)
         elif play_btn_img_default:
-            screen.blit(play_btn_img_default, play_button_rect.topleft)
+            screen.blit(play_btn_img_default, play_rect.topleft)
         else:
             # Fallback se imagens não carregarem
-            play_color = GREEN_HOVER if play_hover else BLACK
-            pygame.draw.rect(screen, play_color, play_button_rect)
-            play_text = main_font.render("JOGAR", True, WHITE)
-            play_text_rect = play_text.get_rect(center=play_button_rect.center)
-            screen.blit(play_text, play_text_rect)'''
+            play_text = main_font.render("1 JOGADOR", True, WHITE)
+            play_text_rect = play_text.get_rect(center=play_rect.center)
+            screen.blit(play_text, play_text_rect)
         
         pygame.display.flip()
         clock.tick(30)
