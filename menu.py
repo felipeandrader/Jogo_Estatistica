@@ -33,7 +33,6 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
     clock = pygame.time.Clock()
 
     # --- Inicialização de Joysticks no Menu ---
-    # Garante que os controles sejam reconhecidos mesmo se plugados agora
     if not pygame.joystick.get_init():
         pygame.joystick.init()
     
@@ -105,7 +104,7 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
                 return "QUIT"
                 
             # --- MOUSE ---
-            # Se mover o mouse, seleciona o botão sob ele
+            # Se mover o mouse, seleciona o botão sob ele e atualiza o selected_index
             if event.type == pygame.MOUSEMOTION:
                 for i, option in enumerate(menu_options):
                     if option["rect"].collidepoint(mouse_pos):
@@ -128,7 +127,6 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
 
             # --- JOYSTICK (BOTÕES e D-PAD) ---
             if event.type == pygame.JOYBUTTONDOWN:
-                # Botão 0 (A/X), Botão 7 (Start) geralmente confirmam
                 if event.button in [0, 1, 2, 7]: 
                     return menu_options[selected_index]["action"]
             
@@ -140,12 +138,11 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
                     selected_index = (selected_index + 1) % len(menu_options)
 
         # --- JOYSTICK (ANALÓGICO) ---
-        # Verificação fora do loop de eventos para controle contínuo com delay
         if current_time - last_input_time > INPUT_COOLDOWN:
             moved = False
             for joy in joysticks:
                 try:
-                    axis_y = joy.get_axis(1) # Eixo vertical
+                    axis_y = joy.get_axis(1) 
                     if axis_y < -0.5: # Cima
                         selected_index = (selected_index - 1) % len(menu_options)
                         moved = True
@@ -159,7 +156,6 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
                 last_input_time = current_time
 
         # --- Desenho ---
-        # Desenha background se fornecido, caso contrário pinta o fundo com GRAY
         if background_image:
             try:
                 screen.blit(background_image, (0, 0))
@@ -168,51 +164,53 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
         else:
             screen.fill(GRAY)
         
-        # Título com contorno preto para melhor legibilidade
+        # Título
         title_offset_y = -50
         title_center = (screen_width // 2, (screen_height // 3) + title_offset_y)
-        draw_text_with_outline(
-            screen,
-            title_font,
-            "MONKEY RUNNERS",
-            title_center,
-            WHITE,  # cor principal do título
-            BLACK,         # contorno preto
-            offset=2
-        )
+        draw_text_with_outline(screen, title_font, "MONKEY RUNNERS", title_center, WHITE, BLACK, offset=2)
 
-        # Desenhar Botão 2 Jogadores com sprite e efeito de hover (opacidade reduzida)
+        # ---------------------------------------------------------
+        #  ATUALIZAÇÃO IMPORTANTE AQUI:
+        #  Usamos 'selected_index' para decidir o visual, 
+        #  não mais a posição do mouse diretamente.
+        # ---------------------------------------------------------
+
+        # --- Botão 2 Jogadores ---
         two_rect = menu_options[1]["rect"]
-        two_hover = two_rect.collidepoint(mouse_pos)
+        # Verifica se o índice 1 está selecionado (pelo mouse ou controle)
+        is_two_selected = (selected_index == 1) 
+
         if two_players_img:
-            if two_hover:
+            if is_two_selected:
                 try:
                     temp_img = two_players_img.copy()
-                    temp_img.set_alpha(160)  # opacidade reduzida no hover
+                    temp_img.set_alpha(160)  # Efeito visual (hover/seleção)
                     screen.blit(temp_img, two_rect.topleft)
                 except Exception:
                     screen.blit(two_players_img, two_rect.topleft)
             else:
                 screen.blit(two_players_img, two_rect.topleft)
         else:
-            # Fallback se imagem não carregou
-            color = BLUE_HOVER if (selected_index == 1) else BLACK
-            if selected_index == 1:
+            # Fallback
+            color = BLUE_HOVER if is_two_selected else BLACK
+            if is_two_selected:
                 pygame.draw.rect(screen, WHITE, two_rect.inflate(6, 6), border_radius=10)
             pygame.draw.rect(screen, color, two_rect, border_radius=10)
             text_surf = main_font.render("2 JOGADORES", True, WHITE)
             text_rect = text_surf.get_rect(center=two_rect.center)
             screen.blit(text_surf, text_rect)
 
-        # Botão Jogar com sprites (default e hover)
+        # --- Botão 1 Jogador ---
         play_rect = menu_options[0]["rect"]
-        play_hover = play_rect.collidepoint(mouse_pos)
-        if play_hover and play_btn_img_hover:
+        # Verifica se o índice 0 está selecionado
+        is_play_selected = (selected_index == 0)
+
+        if is_play_selected and play_btn_img_hover:
             screen.blit(play_btn_img_hover, play_rect.topleft)
         elif play_btn_img_default:
             screen.blit(play_btn_img_default, play_rect.topleft)
         else:
-            # Fallback se imagens não carregarem
+            # Fallback
             play_text = main_font.render("1 JOGADOR", True, WHITE)
             play_text_rect = play_text.get_rect(center=play_rect.center)
             screen.blit(play_text, play_text_rect)

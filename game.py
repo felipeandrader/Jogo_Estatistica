@@ -479,12 +479,25 @@ def run_game(screen, num_players=1):
 
     # Configuração dos Retângulos dos Jogadores
     players_list = []
-    p1_rect = pygame.Rect(30, GAME_HEIGHT // 3, player_width, player_height)
-    players_list.append({"rect": p1_rect, "id": 0, "color": PLAYER_COLOR, "joy_id": p1_controller_id})
+    
+    # Player 1
+    players_list.append({
+        "rect": pygame.Rect(30, GAME_HEIGHT // 3, player_width, player_height),
+        "id": 0,
+        "color": PLAYER_COLOR,
+        "joy_id": p1_controller_id,
+        "last_shot_time": 0  # <--- NOVO: Cada um tem seu tempo
+    })
 
+    # Player 2
     if num_players == 2:
-        p2_rect = pygame.Rect(30, (GAME_HEIGHT // 3) * 2, player_width, player_height)
-        players_list.append({"rect": p2_rect, "id": 1, "color": (255, 50, 50), "joy_id": p2_controller_id})
+        players_list.append({
+            "rect": pygame.Rect(30, (GAME_HEIGHT // 3) * 2, player_width, player_height),
+            "id": 1,
+            "color": (255, 50, 50),
+            "joy_id": p2_controller_id,
+            "last_shot_time": 0 # <--- NOVO
+        })
 
     # Variáveis de Animação e Estado
     player_frame_index = 0
@@ -520,31 +533,47 @@ def run_game(screen, num_players=1):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.mixer.music.stop()
                 return "QUIT"
 
             # --- TIRO (JOYSTICK) ---
             if event.type == pygame.JOYBUTTONDOWN:
                 if event.button == 2: # Botão X (geralmente)
                     triggered_joy_id = event.joy
-                    shooter = None
+                    firing_player = None
+                    # Descobre quem apertou o botão
                     for p in players_list:
                         if p["joy_id"] == triggered_joy_id:
-                            shooter = p; break
+                            firing_player = p; break
                     
-                    if shooter and (current_time_ticks - last_shot_time > SHOOT_COOLDOWN):
-                        bullet_rect = pygame.Rect(shooter["rect"].right, shooter["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
+                    # Verifica o tempo DESTE jogador específico
+                    if firing_player and (current_time_ticks - firing_player["last_shot_time"] > SHOOT_COOLDOWN):
+                        bullet_rect = pygame.Rect(firing_player["rect"].right, firing_player["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
                         bullets.append(bullet_rect)
-                        last_shot_time = current_time_ticks
+                        
+                        # Atualiza o tempo só DESTE jogador
+                        firing_player["last_shot_time"] = current_time_ticks
+                        
 
             # --- TIRO (TECLADO) ---
             if event.type == pygame.KEYDOWN:
+                firing_player = None
+                
+                # Player 1 (Espaço)
                 if event.key == pygame.K_SPACE:
-                    if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
-                        p1 = players_list[0]
-                        bullet_rect = pygame.Rect(p1["rect"].right, p1["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
-                        bullets.append(bullet_rect)
-                        last_shot_time = current_time_ticks
+                    firing_player = next((p for p in players_list if p["id"] == 0), None)
+
+                # Player 2 (Enter)
+                elif event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+                    firing_player = next((p for p in players_list if p["id"] == 1), None)
+
+                # Verifica o tempo DESTE jogador específico
+                if firing_player and (current_time_ticks - firing_player["last_shot_time"] > SHOOT_COOLDOWN):
+                    bullet_rect = pygame.Rect(firing_player["rect"].right, firing_player["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
+                    bullets.append(bullet_rect)
+                    
+                    # Atualiza o tempo só DESTE jogador
+                    firing_player["last_shot_time"] = current_time_ticks
+                    
 
         # --- MOVIMENTAÇÃO ---
         keys = pygame.key.get_pressed()
@@ -553,13 +582,26 @@ def run_game(screen, num_players=1):
             move_x = 0.0
             move_y = 0.0
             
-            # 1. Movimento via Teclado (Só Player 1)
+            # --- PLAYER 1: Usa WASD ---
             if p["id"] == 0:
-                if keys[pygame.K_UP] or keys[pygame.K_w]: move_y -= 1.0
-                if keys[pygame.K_DOWN] or keys[pygame.K_s]: move_y += 1.0
-                if keys[pygame.K_LEFT] or keys[pygame.K_a]: move_x -= 1.0
-                if keys[pygame.K_RIGHT] or keys[pygame.K_d]: move_x += 1.0
-            
+                if keys[pygame.K_w]: move_y -= 1.0
+                if keys[pygame.K_s]: move_y += 1.0
+                if keys[pygame.K_a]: move_x -= 1.0
+                if keys[pygame.K_d]: move_x += 1.0
+                # Opcional: Se estiver SOZINHO (1 jogador), P1 também pode usar setas
+                if num_players == 1:
+                    if keys[pygame.K_UP]: move_y -= 1.0
+                    if keys[pygame.K_DOWN]: move_y += 1.0
+                    if keys[pygame.K_LEFT]: move_x -= 1.0
+                    if keys[pygame.K_RIGHT]: move_x += 1.0
+
+            # --- PLAYER 2: Usa SETINHAS ---
+            elif p["id"] == 1:
+                if keys[pygame.K_UP]: move_y -= 1.0
+                if keys[pygame.K_DOWN]: move_y += 1.0
+                if keys[pygame.K_LEFT]: move_x -= 1.0
+                if keys[pygame.K_RIGHT]: move_x += 1.0
+
             # 2. Movimento via Joystick
             if p["joy_id"] is not None and p["joy_id"] < len(joysticks):
                 try:
@@ -782,7 +824,6 @@ def run_game_boss(screen, num_players=1):
         players_list.append({"rect": pygame.Rect(100, (GAME_HEIGHT // 3) * 2, player_width, player_height), 
                              "id": 1, "color": (255, 50, 50), "joy_id": p2_controller_id})
 
-    items = []
     bullets = []
     last_shot_time = 0
     pos_hit_until_ms = 0
@@ -833,7 +874,7 @@ def run_game_boss(screen, num_players=1):
         for event in pygame.event.get():
             if event.type == pygame.QUIT: return "QUIT"
 
-            # Tiro Joystick (Mapeado pelo joy_id)
+            # --- TIRO (JOYSTICK) ---
             if event.type == pygame.JOYBUTTONDOWN and event.button == 2:
                 triggered_joy_id = event.joy
                 shooter = next((p for p in players_list if p["joy_id"] == triggered_joy_id), None)
@@ -841,25 +882,55 @@ def run_game_boss(screen, num_players=1):
                     bullets.append(pygame.Rect(shooter["rect"].right, shooter["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT))
                     last_shot_time = current_time_ticks
 
-            # Tiro Teclado (Sempre P1)
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
-                    bullets.append(pygame.Rect(players_list[0]["rect"].right, players_list[0]["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT))
+            # --- TIRO (TECLADO) ---
+            if event.type == pygame.KEYDOWN:
+                firing_player = None
+                
+                # ESPAÇO: Sempre Player 1
+                if event.key == pygame.K_SPACE:
+                    firing_player = players_list[0] 
+
+                # ENTER: Depende do modo
+                elif event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+                    if num_players == 1:
+                        firing_player = players_list[0] # P1 usa Enter também se estiver sozinho
+                    elif num_players == 2:
+                        # P2 usa Enter no modo coop
+                        firing_player = next((p for p in players_list if p["id"] == 1), None)
+
+                if firing_player and (current_time_ticks - last_shot_time > SHOOT_COOLDOWN):
+                    bullets.append(pygame.Rect(firing_player["rect"].right, firing_player["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT))
                     last_shot_time = current_time_ticks
 
-        # Movimento
+        # --- MOVIMENTAÇÃO ---
         keys = pygame.key.get_pressed()
         for p in players_list:
             move_x, move_y = 0.0, 0.0
             
-            # Teclado (Só P1)
+            # --- PLAYER 1 (ID 0) ---
             if p["id"] == 0:
-                if keys[pygame.K_UP] or keys[pygame.K_w]: move_y -= 1.0
-                if keys[pygame.K_DOWN] or keys[pygame.K_s]: move_y += 1.0
-                if keys[pygame.K_LEFT] or keys[pygame.K_a]: move_x -= 1.0
-                if keys[pygame.K_RIGHT] or keys[pygame.K_d]: move_x += 1.0
+                # WASD (Sempre ativo para P1)
+                if keys[pygame.K_w]: move_y -= 1.0
+                if keys[pygame.K_s]: move_y += 1.0
+                if keys[pygame.K_a]: move_x -= 1.0
+                if keys[pygame.K_d]: move_x += 1.0
+                
+                # Setas (Só funcionam para P1 se ele estiver SOZINHO)
+                if num_players == 1:
+                    if keys[pygame.K_UP]: move_y -= 1.0
+                    if keys[pygame.K_DOWN]: move_y += 1.0
+                    if keys[pygame.K_LEFT]: move_x -= 1.0
+                    if keys[pygame.K_RIGHT]: move_x += 1.0
 
-            # Joystick
+            # --- PLAYER 2 (ID 1) ---
+            elif p["id"] == 1:
+                # Setas (Funcionam para P2 no multiplayer)
+                if keys[pygame.K_UP]: move_y -= 1.0
+                if keys[pygame.K_DOWN]: move_y += 1.0
+                if keys[pygame.K_LEFT]: move_x -= 1.0
+                if keys[pygame.K_RIGHT]: move_x += 1.0
+
+            # Joystick (Lógica Geral)
             if p["joy_id"] is not None and p["joy_id"] < len(joysticks):
                 try:
                     joy = joysticks[p["joy_id"]]
@@ -889,7 +960,7 @@ def run_game_boss(screen, num_players=1):
                 max_frames = len(anim_frames) if anim_frames else 0
                 if max_frames == 0 or b["explosion_frame_index"] >= max_frames:
                     balloons_around_boss.pop(i)
-                continue # Se está explodindo, não gira mais
+                continue 
 
             tx, ty = hexagon_points[b["target_idx"]]
             cx, cy = b["rect"].center
@@ -915,7 +986,6 @@ def run_game_boss(screen, num_players=1):
                 if b["exploding"]: continue
 
                 if bullets[i].colliderect(b["rect"]):
-                    # b = balloons_around_boss.pop(bi) <-- Não removemos mais direto
                     current_score += ITEM_SCORES.get(b["type"], 0)
                     stats_counts_local[b["type"]] += 1
                     
@@ -942,7 +1012,6 @@ def run_game_boss(screen, num_players=1):
         if current_time_ticks >= pos_hit_until_ms:
             for bi in range(len(balloons_around_boss) - 1, -1, -1):
                 b = balloons_around_boss[bi]
-                # Se está explodindo, não causa dano
                 if b["exploding"]: continue
 
                 hit_p = False
@@ -962,23 +1031,15 @@ def run_game_boss(screen, num_players=1):
         screen.fill(BLACK)
         pygame.draw.rect(screen, LIGHT_BLUE, (0, 0, GAME_WIDTH, GAME_HEIGHT))
         
-        # Índice do frame atual
         frame_idx = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
 
         for p in players_list:
             draw_img = None
-            
-            # Se for Player 1 (ID 0) -> Usa Macaco
             if p["id"] == 0:
-                if p1_animation_frames:
-                    draw_img = p1_animation_frames[frame_idx]
-            
-            # Se for Player 2 (ID 1) -> Usa Mamaco
+                if p1_animation_frames: draw_img = p1_animation_frames[frame_idx]
             elif p["id"] == 1:
-                if p2_animation_frames:
-                    draw_img = p2_animation_frames[frame_idx]
+                if p2_animation_frames: draw_img = p2_animation_frames[frame_idx]
                 else:
-                    # Fallback: Se não tem mamaco, usa macaco pintado de vermelho
                     if p1_animation_frames:
                         draw_img = p1_animation_frames[frame_idx].copy()
                         draw_img.fill((255, 100, 100), special_flags=pygame.BLEND_MULT)
@@ -994,7 +1055,6 @@ def run_game_boss(screen, num_players=1):
         for b in bullets: pygame.draw.rect(screen, BULLET_COLOR, b)
         pygame.draw.rect(screen, (200, 50, 50), boss_rect, width=4)
         
-        # DESENHO DOS BALÕES DO BOSS COM EXPLOSÃO
         for b in balloons_around_boss:
             if b.get("exploding", False):
                 frame_index = int(b["explosion_frame_index"])
