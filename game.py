@@ -29,7 +29,7 @@ FITTING_COLOR = (255, 0, 0)
 SCORE_POINT_COLOR = (0, 255, 255)
 
 # SCORE TO UNLOCK BOSS FIGHT
-SCORE_TO_BOSS = 2000
+SCORE_TO_BOSS = 200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 
 # --- CONFIGURAÇÕES DE PROBABILIDADE E PONTUAÇÃO ---
 NEW_COLOR_NAME = "orange"
@@ -84,10 +84,9 @@ pygame.joystick.init()
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Monkey Runners")
-clock = pygame.time.Clock() 
-main_font = pygame.font.SysFont("Consolas", 18) 
-title_font = pygame.font.Font("LuckiestGuy-Regular.ttf", 64)
-second_font = pygame.font.Font("LuckiestGuy-Regular.ttf", 26)
+clock = pygame.time.Clock()
+main_font = pygame.font.SysFont("Consolas", 18)
+title_font = pygame.font.SysFont("Consolas", 26, bold=True)
 
 # --- Configuração dos Joysticks Globais ---
 joysticks = []
@@ -121,23 +120,12 @@ try:
 except pygame.error:
     print(f"AVISO: Não foi possível carregar o arquivo '{HIT_SOUND_FILE}'.")
 
-# --- Carregar background do menu ---
-try:
-    MENU_BG_FILE = "menu_.png"
-    menu_bg = pygame.image.load(MENU_BG_FILE).convert()
-    menu_bg = pygame.transform.scale(menu_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))
-    print(f"Background {MENU_BG_FILE} carregado.")
-except pygame.error:
-    menu_bg = None
-    print(f"AVISO: Não foi possível carregar '{MENU_BG_FILE}'.")
-
 
 # --- Carregar Imagem do Jogador ---
 player_width = 110
 player_height = 90
 player_animation_frames = []
 player_filenames = ["macaco1.png", "macaco2.png", "macaco3.png"]
-
 
 try:
     for filename in player_filenames:
@@ -222,7 +210,7 @@ except pygame.error as e:
     print(f"ERRO: Não foi possível carregar animação de explosão roxa. Detalhes: {e}")
     explosion_animations["purple"] = []
 
-# --- NOVO: Animação para balão VERDE ---
+# --- Animação para balão VERDE ---
 green_explosion_frames = []
 green_filenames = ["verde1.png", "verde2.png", "verde3.png", "verde4.png"]
 try:
@@ -266,68 +254,13 @@ def get_empirical_prob(item_type, current_counts):
     return current_counts.get(item_type, 0) / float(total_count)
 
 
-def draw_game(player, item_list, bullet_list, player_img, pos_hit_until_ms=0, current_time_ticks=None):
-    pygame.draw.rect(screen, LIGHT_BLUE, (0, 0, GAME_WIDTH, GAME_HEIGHT))
-
-    # Efeito de piscar durante a janela pos-hit
-    if player_img:
-        pos_hit_active = False
-        if current_time_ticks is not None and current_time_ticks < pos_hit_until_ms:
-            pos_hit_active = True
-
-        if pos_hit_active:
-            BLINK_INTERVAL_MS = 150
-            ALPHA_LOW = 80
-            ALPHA_HIGH = 160
-            try:
-                phase = (current_time_ticks // BLINK_INTERVAL_MS) % 2
-                alpha_val = ALPHA_LOW if phase == 0 else ALPHA_HIGH
-                temp_img = player_img.copy()
-                temp_img.set_alpha(int(alpha_val))
-                screen.blit(temp_img, player.topleft)
-            except Exception:
-                screen.blit(player_img, player.topleft)
-        else:
-            screen.blit(player_img, player.topleft)
-    else:
-        pygame.draw.rect(screen, PLAYER_COLOR, player)
-
-    for item in item_list:
-        # Verifica se o item está explodindo
-        if item.get("exploding", False):
-             frame_index = int(item["explosion_frame_index"])
-             
-             # Seleciona a animação correta baseada no tipo do item
-             anim_frames = explosion_animations.get(item["type"], [])
-             
-             if anim_frames and 0 <= frame_index < len(anim_frames):
-                 img = anim_frames[frame_index]
-                 
-                 # LÓGICA DE CENTRALIZAÇÃO:
-                 center_x, center_y = item["rect"].center
-                 explosion_rect = img.get_rect()
-                 explosion_rect.center = (center_x, center_y)
-                 
-                 screen.blit(img, explosion_rect.topleft)
-             
-        elif item["image"]:
-            screen.blit(item["image"], item["rect"].topleft)
-        else:
-            center = (int(item["rect"].centerx), int(item["rect"].centery))
-            radius = int(item["rect"].width // 2)
-            pygame.draw.circle(screen, item["color"], center, radius)
-
-    for bullet in bullet_list:
-        pygame.draw.rect(screen, BULLET_COLOR, bullet)
-
-
 def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rect, expected_prob_func=None):
     pygame.draw.rect(screen, GRAY, bounds_rect)
 
     graph_x_start = bounds_rect.left + 30
     graph_y_bottom = bounds_rect.bottom - 30
 
-    title_text = second_font.render(title, True, WHITE)
+    title_text = title_font.render(title, True, WHITE)
     surface.blit(title_text, (bounds_rect.left + (bounds_rect.width - title_text.get_width()) // 2, bounds_rect.top + 10))
 
     total_count = sum(data_dict.values())
@@ -401,9 +334,9 @@ def draw_histogram(surface, data_dict, data_keys, data_colors, title, bounds_rec
 
 
 def draw_scatter_plot(surface, data_points, bounds_rect, elapsed_time):
-    pygame.draw.rect(screen, GRAY, bounds_rect) 
-    
-    graph_title_text = second_font.render("Pontuação x Tempo", True, WHITE)
+    pygame.draw.rect(screen, GRAY, bounds_rect)
+
+    graph_title_text = title_font.render("Pontuação x Tempo", True, WHITE)
     surface.blit(graph_title_text, (bounds_rect.left + (bounds_rect.width - graph_title_text.get_width()) // 2, bounds_rect.top + 20))
 
     MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, MARGIN_BOTTOM = 60, 30, 50, 50
@@ -505,30 +438,22 @@ def run_game(screen, num_players=1):
     last_shot_time = 0
     pos_hit_until_ms = 0
     
+    # Configuração da Animação de Explosão
+    EXPLOSION_ANIMATION_SPEED = 0.35 # Quanto maior, mais rápido
+
     # --- LÓGICA DE CONTROLES FLEXÍVEL ---
-    # Definição de quem usa qual controle
-    # P1_CONTROLLER_ID: Qual joystick controla o Player 1 (None se for só teclado)
-    # P2_CONTROLLER_ID: Qual joystick controla o Player 2
-    
     p1_controller_id = None
     p2_controller_id = None
     
     # Se temos pelo menos 1 controle:
     if len(joysticks) >= 1:
-        # Se for 1 Jogador, o controle 0 move ele.
         if num_players == 1:
             p1_controller_id = 0
-        
-        # Se forem 2 Jogadores:
         elif num_players == 2:
             if len(joysticks) == 1:
-                # Cenário: 1 Teclado + 1 Controle.
-                # Player 1 fica no Teclado. Player 2 pega o Controle 0.
                 p1_controller_id = None 
                 p2_controller_id = 0
             else:
-                # Cenário: 2 Controles.
-                # Player 1 pega Controle 0. Player 2 pega Controle 1.
                 p1_controller_id = 0
                 p2_controller_id = 1
 
@@ -653,23 +578,44 @@ def run_game(screen, num_players=1):
         if item_spawn_timer >= ITEM_SPAWN_RATE:
             item_spawn_timer = 0
             item_type = random.choices(COLOR_TYPES, weights=[ITEM_PROBABILITIES[t] for t in COLOR_TYPES], k=1)[0]
-            items.append({"rect": pygame.Rect(GAME_WIDTH + ITEM_IMAGE_WIDTH, random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT), ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT), 
-                          "color": ITEM_COLORS[item_type], "type": item_type, "image": balloon_images.get(item_type)})
+            items.append({
+                "rect": pygame.Rect(GAME_WIDTH + ITEM_IMAGE_WIDTH, random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT), ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT), 
+                "color": ITEM_COLORS[item_type], 
+                "type": item_type, 
+                "image": balloon_images.get(item_type),
+                "exploding": False, 
+                "explosion_frame_index": 0.0
+            })
 
         for i in range(len(bullets) - 1, -1, -1):
             bullets[i].x += BULLET_SPEED
             if bullets[i].left > GAME_WIDTH: bullets.pop(i)
 
         for i in range(len(items) - 1, -1, -1):
-            items[i]["rect"].x -= current_item_speed
-            if items[i]["rect"].right < 0:
+            item = items[i]
+
+            # --- LÓGICA DE ATUALIZAÇÃO DA EXPLOSÃO ---
+            if item["exploding"]:
+                item["explosion_frame_index"] += EXPLOSION_ANIMATION_SPEED
+                
+                # Seleciona a animação correta para saber o tamanho máximo
+                anim_frames = explosion_animations.get(item["type"], [])
+                max_frames = len(anim_frames) if anim_frames else 0
+                
+                # Se a animação acabou ou não existe, remove o item
+                if max_frames == 0 or item["explosion_frame_index"] >= max_frames:
+                    items.pop(i)
+                continue # Pula o movimento se estiver explodindo
+
+            item["rect"].x -= current_item_speed
+            if item["rect"].right < 0:
                 items.pop(i); continue
 
             # Colisão Jogador
             if current_time_ticks >= pos_hit_until_ms:
                 hit = False
                 for p in players_list:
-                    if p["rect"].colliderect(items[i]["rect"]):
+                    if p["rect"].colliderect(item["rect"]):
                         hit_sound.play(); player_lives -= 1; pos_hit_until_ms = current_time_ticks + 1000; hit = True
                         print(f"Player {p['id']+1} hit!"); break
                 if hit:
@@ -681,6 +627,10 @@ def run_game(screen, num_players=1):
         for b_idx in range(len(bullets) - 1, -1, -1):
             hit = False
             for i_idx in range(len(items) - 1, -1, -1):
+                # Ignora se já estiver explodindo
+                if items[i_idx]["exploding"]:
+                    continue
+
                 if bullets[b_idx].colliderect(items[i_idx]["rect"]):
                     item_type = items[i_idx]["type"]
                     current_score += ITEM_SCORES[item_type]
@@ -694,7 +644,14 @@ def run_game(screen, num_players=1):
                     elif interval < 2.0: stats_intervals["1.4-2.0"] += 1
                     else: stats_intervals["2.0s+"] += 1
 
-                    items.pop(i_idx); bullets.pop(b_idx); hit = True; break
+                    # --- GATILHO DA EXPLOSÃO ---
+                    if item_type in explosion_animations and explosion_animations[item_type]:
+                         items[i_idx]["exploding"] = True
+                         items[i_idx]["explosion_frame_index"] = 0.0
+                    else:
+                         items.pop(i_idx)
+
+                    bullets.pop(b_idx); hit = True; break
             if hit: continue
 
         if current_score >= SCORE_TO_BOSS:
@@ -730,12 +687,25 @@ def run_game(screen, num_players=1):
                 if draw_img: screen.blit(draw_img, p["rect"].topleft)
                 else: pygame.draw.rect(screen, p["color"], p["rect"])
 
-        for it in items:
-            if it["image"]: screen.blit(it["image"], it["rect"].topleft)
-            else: pygame.draw.circle(screen, it["color"], it["rect"].center, it["rect"].width // 2)
+        # DESENHO DOS ITENS COM SUPORTE A ANIMAÇÃO
+        for item in items:
+            if item.get("exploding", False):
+                frame_index = int(item["explosion_frame_index"])
+                anim_frames = explosion_animations.get(item["type"], [])
+                if anim_frames and 0 <= frame_index < len(anim_frames):
+                    img = anim_frames[frame_index]
+                    center_x, center_y = item["rect"].center
+                    explosion_rect = img.get_rect()
+                    explosion_rect.center = (center_x, center_y)
+                    screen.blit(img, explosion_rect.topleft)
+            elif item["image"]: 
+                screen.blit(item["image"], item["rect"].topleft)
+            else: 
+                pygame.draw.circle(screen, item["color"], item["rect"].center, item["rect"].width // 2)
+
         for b in bullets: pygame.draw.rect(screen, BULLET_COLOR, b)
 
-        screen.blit(second_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE), (10, 10))
+        screen.blit(title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE), (10, 10))
         draw_player_lives(screen, player_lives)
 
         # Gráficos
@@ -942,15 +912,7 @@ def run_game_boss(screen, num_players=1):
             else: pygame.draw.circle(screen, ITEM_COLORS.get(b["type"], WHITE), b["rect"].center, ITEM_IMAGE_WIDTH // 2)
         if boss_sprite: screen.blit(boss_sprite, boss_rect.topleft)
 
-        screen.blit(boss_sprite, boss_rect.topleft)  # Desenha a imagem do boss
-        #pygame.draw.rect(screen, (255, 0, 0), boss_rect, 2)  # Desenha o retângulo do boss em vermelho
-
-        # HUD da cena do boss
-        score_text = second_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
-        boss_text = second_font.render("CENA DO BOSS - Prepare-se!", True, WHITE)
-        screen.blit(score_text, (10, 10))
-        screen.blit(boss_text, (10, 45))
-        # HUD: vidas
+        screen.blit(title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE), (10, 10))
         draw_player_lives(screen, player_lives)
 
         rect1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
@@ -977,8 +939,7 @@ def main():
 
     while True:
         if current_state == "MENU":
-            # Assume que menu.show_menu existe e retorna "PLAY" ou "QUIT"
-            result = menu.show_menu(screen, SCREEN_WIDTH, SCREEN_HEIGHT, title_font, main_font, menu_bg)
+            result = menu.show_menu(screen, SCREEN_WIDTH, SCREEN_HEIGHT, title_font, main_font)
             if result == "PLAY":
                 current_state = "GAME"
                 selected_num_players = 1
