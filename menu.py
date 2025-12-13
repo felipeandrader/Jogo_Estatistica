@@ -84,6 +84,13 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
     except pygame.error:
         play_btn_img_hover = None
 
+    # Carrega sprite do botão 2 Jogadores
+    try:
+        two_players_img = pygame.image.load("dois_jogadores_botao1.png").convert_alpha()
+        two_players_img = pygame.transform.smoothscale(two_players_img, (button_2p_width, button_2p_height))
+    except pygame.error:
+        two_players_img = None
+
     last_input_time = 0
     INPUT_COOLDOWN = 200 
 
@@ -174,21 +181,27 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
             offset=2
         )
 
-        # Desenhar Botão 2 Jogadores (retângulo + texto)
-        for i, option in enumerate(menu_options):
-            if i == 0:
-                # O botão de 1 jogador será desenhado com sprites mais abaixo
-                continue
-            is_selected = (i == selected_index)
-            rect = option["rect"]
-
-            color = option["color_selected"] if is_selected else BLACK
-            if is_selected:
-                pygame.draw.rect(screen, WHITE, rect.inflate(6, 6), border_radius=10)
-            pygame.draw.rect(screen, color, rect, border_radius=10)
-
-            text_surf = main_font.render(option["label"], True, WHITE)
-            text_rect = text_surf.get_rect(center=rect.center)
+        # Desenhar Botão 2 Jogadores com sprite e efeito de hover (opacidade reduzida)
+        two_rect = menu_options[1]["rect"]
+        two_hover = two_rect.collidepoint(mouse_pos)
+        if two_players_img:
+            if two_hover:
+                try:
+                    temp_img = two_players_img.copy()
+                    temp_img.set_alpha(160)  # opacidade reduzida no hover
+                    screen.blit(temp_img, two_rect.topleft)
+                except Exception:
+                    screen.blit(two_players_img, two_rect.topleft)
+            else:
+                screen.blit(two_players_img, two_rect.topleft)
+        else:
+            # Fallback se imagem não carregou
+            color = BLUE_HOVER if (selected_index == 1) else BLACK
+            if selected_index == 1:
+                pygame.draw.rect(screen, WHITE, two_rect.inflate(6, 6), border_radius=10)
+            pygame.draw.rect(screen, color, two_rect, border_radius=10)
+            text_surf = main_font.render("2 JOGADORES", True, WHITE)
+            text_rect = text_surf.get_rect(center=two_rect.center)
             screen.blit(text_surf, text_rect)
 
         # Botão Jogar com sprites (default e hover)
