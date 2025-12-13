@@ -119,8 +119,8 @@ ITEM_SPEED_INCREASE = 1.5
 ITEM_SPEED_INTERVAL = 15.0  # Aumento de velocidade a cada 15 segundos
 
 BULLET_SPEED = 20
-BULLET_WIDTH = 35
-BULLET_HEIGHT = 4
+BULLET_WIDTH = 150
+BULLET_HEIGHT = 65
 SHOOT_COOLDOWN = 200
 
 # Velocidade do jogador em pixels por segundo
@@ -320,6 +320,19 @@ try:
 except pygame.error as e:
     print(f"ERRO: Não foi possível carregar a imagem da vida do jogador. Usando quadrado vermelho. Detalhes: {e}")
     life_sprite = None
+
+# --- Carregar Imagem do Projétil ---
+bullet_img = None
+try:
+    # Tente carregar a imagem 'projetil.png'
+    bullet_img = pygame.image.load("projetil.png").convert_alpha()
+    # Redimensiona para o tamanho exato definido nas configurações (35x4)
+    # Se quiser o projetil maior, altere BULLET_WIDTH e BULLET_HEIGHT lá em cima nas constantes
+    bullet_img = pygame.transform.scale(bullet_img, (BULLET_WIDTH, BULLET_HEIGHT))
+    print("Imagem do projétil carregada.")
+except pygame.error:
+    print("AVISO: 'projetil.png' não encontrado. Usando retângulo padrão.")
+    bullet_img = None
 
 # ----------------------------------------------------------------------
 ## Funções de Desenho
@@ -572,7 +585,7 @@ def run_game(screen, num_players=1):
     last_collection_time = pygame.time.get_ticks()
 
     # Aumente este valor se ainda achar lento (ex: 5.0, 10.0, etc)
-    PARALLAX_SPEED_MULTIPLIER = 5000.0
+    PARALLAX_SPEED_MULTIPLIER = 100.0
 
     # --- CONFIGURAÇÃO DO PARALLAX ---
     bg_files = [
@@ -853,7 +866,14 @@ def run_game(screen, num_players=1):
             else: 
                 pygame.draw.circle(screen, item["color"], item["rect"].center, item["rect"].width // 2)
 
-        for b in bullets: pygame.draw.rect(screen, BULLET_COLOR, b)
+        # Desenho das Balas
+        for b in bullets:
+            if bullet_img:
+                # Se a imagem existe, desenha ela na posição do retângulo
+                screen.blit(bullet_img, b.topleft)
+            else:
+                # Se a imagem falhou ao carregar, desenha o retângulo antigo
+                pygame.draw.rect(screen, BULLET_COLOR, b)
 
         screen.blit(second_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE), (10, 10))
         draw_player_lives(screen, player_lives)
