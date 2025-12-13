@@ -70,7 +70,20 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
     ]
 
     selected_index = 0 # Qual opção está selecionada atualmente
-    
+
+    #Carrega imagem
+    try:
+        ace_bloon_img = pygame.image.load("ace_bloon.png").convert_alpha()
+        ace_bloon_img = pygame.transform.smoothscale(ace_bloon_img, (340, 325))
+    except pygame.error:
+        ace_bloon_img = None
+
+    try:
+        red_ace_bloon_img = pygame.image.load("red_ace_monkey.png").convert_alpha()
+        red_ace_bloon_img = pygame.transform.smoothscale(red_ace_bloon_img, (340, 325))
+    except pygame.error:
+        red_ace_bloon_img = None
+
     # Carrega sprites do botão JOGAR
     try:
         play_btn_img_default = pygame.image.load("botao_jogar_1.png").convert_alpha()
@@ -199,6 +212,9 @@ def show_menu(screen, screen_width, screen_height, title_font, main_font, backgr
             text_surf = main_font.render("2 JOGADORES", True, WHITE)
             text_rect = text_surf.get_rect(center=two_rect.center)
             screen.blit(text_surf, text_rect)
+
+        screen.blit(ace_bloon_img, (100, screen_height - ace_bloon_img.get_height() - 150))
+        screen.blit(red_ace_bloon_img, (screen_width - red_ace_bloon_img.get_width() - 50, screen_height - red_ace_bloon_img.get_height() - 150))
 
         # --- Botão 1 Jogador ---
         play_rect = menu_options[0]["rect"]

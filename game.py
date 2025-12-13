@@ -117,8 +117,8 @@ ITEM_SPEED_INCREASE = 1.5
 ITEM_SPEED_INTERVAL = 15.0  # Aumento de velocidade a cada 15 segundos
 
 BULLET_SPEED = 20
-BULLET_WIDTH = 150
-BULLET_HEIGHT = 65
+BULLET_WIDTH = 35
+BULLET_HEIGHT = 8
 SHOOT_COOLDOWN = 200
 
 # Velocidade do jogador em pixels por segundo
