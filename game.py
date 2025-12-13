@@ -81,7 +81,7 @@ FITTING_COLOR = (255, 0, 0)
 SCORE_POINT_COLOR = (0, 255, 255)
 
 # SCORE TO UNLOCK BOSS FIGHT
-SCORE_TO_BOSS = 200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+SCORE_TO_BOSS = 200000
 
 # --- CONFIGURAÇÕES DE PROBABILIDADE E PONTUAÇÃO ---
 NEW_COLOR_NAME = "orange"
@@ -907,10 +907,133 @@ def run_game(screen, num_players=1):
 # --- CENA DO BOSS (PREPARAÇÃO) ---
 # ----------------------------------------------------------------------
 
-boss_rect = pygame.Rect(962, 262, BOSS_IMAGE_WIDTH, BOSS_IMAGE_HEIGHT)
+# Constantes do Boss
+BOSS_MAX_HP = 5
+BOSS_MOVE_SPEED = 40  # Pixels por segundo (movimento para esquerda)
+BOSS_ORBIT_RADIUS = 120  # Raio da órbita dos balões
+BOSS_ORBIT_SPEED = 1.5  # Velocidade angular (radianos por segundo)
+BOSS_DANGER_ZONE = 180  # Distância X do jogador onde o boss causa game over
+BOSS_VICTORY_BONUS = 10000  # Pontuação por derrotar o boss
+
+# Partículas para efeitos visuais épicos
+class Particle:
+    def __init__(self, x, y, color, velocity, lifetime, size=4):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.vx, self.vy = velocity
+        self.lifetime = lifetime
+        self.max_lifetime = lifetime
+        self.size = size
+    
+    def update(self, dt):
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        self.vy += 200 * dt  # Gravidade
+        self.lifetime -= dt
+        return self.lifetime > 0
+    
+    def draw(self, surface):
+        alpha = int(255 * (self.lifetime / self.max_lifetime))
+        size = max(1, int(self.size * (self.lifetime / self.max_lifetime)))
+        # Desenha círculo com fade
+        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), size)
+
+def create_explosion_particles(x, y, color, count=15):
+    """Cria partículas de explosão"""
+    particles = []
+    for _ in range(count):
+        angle = random.uniform(0, 2 * math.pi)
+        speed = random.uniform(100, 300)
+        vx = math.cos(angle) * speed
+        vy = math.sin(angle) * speed - 100  # Impulso para cima
+        lifetime = random.uniform(0.3, 0.8)
+        size = random.randint(3, 8)
+        particles.append(Particle(x, y, color, (vx, vy), lifetime, size))
+    return particles
+
+def create_hit_particles(x, y, count=8):
+    """Cria partículas de impacto (amarelas/laranjas)"""
+    particles = []
+    colors = [(255, 255, 0), (255, 200, 0), (255, 150, 0), (255, 100, 0)]
+    for _ in range(count):
+        angle = random.uniform(0, 2 * math.pi)
+        speed = random.uniform(50, 150)
+        vx = math.cos(angle) * speed
+        vy = math.sin(angle) * speed
+        lifetime = random.uniform(0.2, 0.5)
+        size = random.randint(2, 5)
+        particles.append(Particle(x, y, random.choice(colors), (vx, vy), lifetime, size))
+    return particles
+
+def draw_boss_health_bar(surface, boss_hp, max_hp, boss_center_x, boss_center_y):
+    """Desenha uma barra de vida épica acima do boss"""
+    bar_width = 150
+    bar_height = 16
+    bar_x = boss_center_x - bar_width // 2
+    bar_y = boss_center_y - BOSS_IMAGE_HEIGHT // 2 - 40
+    
+    # Fundo da barra (preto com borda)
+    pygame.draw.rect(surface, (30, 30, 30), (bar_x - 2, bar_y - 2, bar_width + 4, bar_height + 4))
+    pygame.draw.rect(surface, (80, 80, 80), (bar_x, bar_y, bar_width, bar_height))
+    
+    # Vida atual (gradiente de vermelho para verde)
+    hp_ratio = boss_hp / max_hp
+    fill_width = int(bar_width * hp_ratio)
+    
+    # Cor baseada na vida restante
+    if hp_ratio > 0.6:
+        bar_color = (50, 255, 50)  # Verde
+    elif hp_ratio > 0.3:
+        bar_color = (255, 200, 0)  # Amarelo
+    else:
+        bar_color = (255, 50, 50)  # Vermelho
+    
+    if fill_width > 0:
+        pygame.draw.rect(surface, bar_color, (bar_x, bar_y, fill_width, bar_height))
+    
+    # Borda
+    pygame.draw.rect(surface, WHITE, (bar_x - 2, bar_y - 2, bar_width + 4, bar_height + 4), 2)
+    
+    # Texto HP
+    hp_text = main_font.render(f"BOSS: {boss_hp}/{max_hp}", True, WHITE)
+    surface.blit(hp_text, (bar_x + bar_width // 2 - hp_text.get_width() // 2, bar_y - 22))
+
+def draw_warning_overlay(surface, boss_x, danger_threshold):
+    """Desenha overlay de perigo quando o boss está perto"""
+    if boss_x < danger_threshold + 200:
+        # Calcula intensidade do warning
+        intensity = max(0, 1 - (boss_x - danger_threshold) / 200)
+        alpha = int(50 * intensity)
+        
+        # Flash vermelho nas bordas
+        warning_surf = pygame.Surface((SCREEN_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.rect(warning_surf, (255, 0, 0, alpha), (0, 0, 30, GAME_HEIGHT))
+        pygame.draw.rect(warning_surf, (255, 0, 0, alpha), (SCREEN_WIDTH - 30, 0, 30, GAME_HEIGHT))
+        pygame.draw.rect(warning_surf, (255, 0, 0, alpha), (0, 0, SCREEN_WIDTH, 30))
+        pygame.draw.rect(warning_surf, (255, 0, 0, alpha), (0, GAME_HEIGHT - 30, SCREEN_WIDTH, 30))
+        surface.blit(warning_surf, (0, 0))
 
 def run_game_boss(screen, num_players=1):
     global current_score, player_lives, joysticks
+
+    # --- CONFIGURAÇÃO DO BOSS ---
+    boss_hp = BOSS_MAX_HP
+    boss_center_x = float(SCREEN_WIDTH - 200)  # Posição X inicial (direita da tela)
+    boss_center_y = float(GAME_HEIGHT // 2)    # Centro vertical
+    boss_hit_flash_until = 0  # Timer para flash quando leva dano
+    boss_defeated = False
+    victory_animation_timer = 0
+    
+    # Screen shake
+    screen_shake_until = 0
+    screen_shake_intensity = 0
+    
+    # Partículas
+    particles = []
+    
+    # Aura do boss (círculos pulsantes)
+    aura_pulse = 0.0
 
     # --- LÓGICA DE CONTROLES (Igual à run_game) ---
     p1_controller_id = None
@@ -928,14 +1051,15 @@ def run_game_boss(screen, num_players=1):
     players_list = []
     # Player 1
     players_list.append({"rect": pygame.Rect(100, GAME_HEIGHT // 3, player_width, player_height), 
-                         "id": 0, "color": PLAYER_COLOR, "joy_id": p1_controller_id})
+                         "id": 0, "color": PLAYER_COLOR, "joy_id": p1_controller_id,
+                         "last_shot_time": 0})
     # Player 2
     if num_players == 2:
         players_list.append({"rect": pygame.Rect(100, (GAME_HEIGHT // 3) * 2, player_width, player_height), 
-                             "id": 1, "color": (255, 50, 50), "joy_id": p2_controller_id})
+                             "id": 1, "color": (255, 50, 50), "joy_id": p2_controller_id,
+                             "last_shot_time": 0})
 
     bullets = []
-    last_shot_time = 0
     pos_hit_until_ms = 0
     
     # Configuração da Animação de Explosão (Boss)
@@ -949,25 +1073,45 @@ def run_game_boss(screen, num_players=1):
     start_time_ms = pygame.time.get_ticks()
     last_collection_time_boss = start_time_ms
 
-    # Configuração do Boss (Hexágono)
-    boss_center_x, boss_center_y = boss_rect.center
-    radius_x = boss_rect.width // 2 + 100
-    radius_y = boss_rect.height // 2 + 100
-    hexagon_points = [(int(boss_center_x + radius_x * math.cos(math.radians(a))), int(boss_center_y + radius_y * math.sin(math.radians(a)))) for a in [0, 60, 120, 180, 240, 300]]
-    BOSS_BALLOON_SPEED = 160
-
+    # --- BALÕES ORBITANDO O BOSS ---
+    # Cada balão tem um ângulo de órbita que aumenta continuamente
+    NUM_ORBITING_BALLOONS = 8
+    orbit_angle_offset = 0.0  # Ângulo global que incrementa para rotação
+    
     balloons_around_boss = []
-    for i, (cx, cy) in enumerate(hexagon_points):
+    for i in range(NUM_ORBITING_BALLOONS):
         chosen_type = random.choice(COLOR_TYPES)
-        # Adiciona variáveis de explosão nos balões do boss
+        angle = (2 * math.pi / NUM_ORBITING_BALLOONS) * i  # Distribuição uniforme
+        
         balloons_around_boss.append({
             "type": chosen_type, 
             "image": balloon_images.get(chosen_type), 
-            "rect": balloon_images.get(chosen_type).get_rect(center=(cx, cy)) if balloon_images.get(chosen_type) else pygame.Rect(cx, cy, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT), 
-            "target_idx": (i + 1) % 6,
+            "rect": pygame.Rect(0, 0, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT),
+            "orbit_angle": angle,  # Ângulo individual na órbita
+            "orbit_radius": BOSS_ORBIT_RADIUS + random.randint(-20, 20),  # Variação no raio
+            "orbit_speed_mult": 1.0 + random.uniform(-0.2, 0.2),  # Variação na velocidade
             "exploding": False, 
             "explosion_frame_index": 0.0
         })
+
+    # Função para respawnar balões
+    def spawn_new_balloon():
+        chosen_type = random.choice(COLOR_TYPES)
+        # Spawna do lado oposto (atrás do boss)
+        angle = random.uniform(0, 2 * math.pi)
+        return {
+            "type": chosen_type, 
+            "image": balloon_images.get(chosen_type), 
+            "rect": pygame.Rect(0, 0, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT),
+            "orbit_angle": angle,
+            "orbit_radius": BOSS_ORBIT_RADIUS + random.randint(-20, 20),
+            "orbit_speed_mult": 1.0 + random.uniform(-0.2, 0.2),
+            "exploding": False, 
+            "explosion_frame_index": 0.0
+        }
+
+    balloon_respawn_timer = 0
+    BALLOON_RESPAWN_INTERVAL = 2.0  # Segundos para respawnar balões
 
     global boss_stats_counts, boss_stats_intervals, boss_score_vs_time, boss_snapshot_elapsed
     stats_counts_local = boss_stats_counts.copy() if boss_stats_counts else {k: 0 for k in COLOR_TYPES}
@@ -975,11 +1119,32 @@ def run_game_boss(screen, num_players=1):
     score_vs_time_local = boss_score_vs_time.copy() if boss_score_vs_time else [(0.0, current_score)]
     snapshot_elapsed = boss_snapshot_elapsed
 
+    # --- PARALLAX PARA O BOSS ---
+    bg_files = [
+        "forest_sky.png", "forest_short.png", "forest_mountain.png",
+        "forest_moon.png", "forest_mid.png", "forest_long.png", "forest_back.png"
+    ]
+    bg_speeds = [0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0]
+    parallax_bg = ParallaxBackground(SCREEN_WIDTH, SCREEN_HEIGHT, bg_files, bg_speeds)
+
     running = True
     while running:
         dt = clock.tick(60) / 1000.0
         current_time_ticks = pygame.time.get_ticks()
         elapsed_time_sec = (current_time_ticks - start_time_ms) / 1000.0
+
+        # --- ANIMAÇÃO DE VITÓRIA ---
+        if boss_defeated:
+            victory_animation_timer += dt
+            if victory_animation_timer > 3.0:  # 3 segundos de celebração
+                pygame.mixer.music.stop()
+                return "GAME_OVER"  # Volta ao menu (poderia ser "VICTORY" se quiser diferenciar)
+            
+            # Adiciona partículas de celebração
+            if random.random() < 0.3:
+                px = random.randint(100, SCREEN_WIDTH - 100)
+                py = random.randint(50, GAME_HEIGHT - 50)
+                particles.extend(create_explosion_particles(px, py, random.choice([(255, 215, 0), (50, 255, 50), (50, 200, 255)]), 5))
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT: return "QUIT"
@@ -988,59 +1153,47 @@ def run_game_boss(screen, num_players=1):
             if event.type == pygame.JOYBUTTONDOWN and event.button == 2:
                 triggered_joy_id = event.joy
                 shooter = next((p for p in players_list if p["joy_id"] == triggered_joy_id), None)
-                if shooter and (current_time_ticks - last_shot_time > SHOOT_COOLDOWN):
+                if shooter and (current_time_ticks - shooter["last_shot_time"] > SHOOT_COOLDOWN):
                     bullets.append(pygame.Rect(shooter["rect"].right, shooter["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT))
-                    last_shot_time = current_time_ticks
+                    shooter["last_shot_time"] = current_time_ticks
 
             # --- TIRO (TECLADO) ---
             if event.type == pygame.KEYDOWN:
                 firing_player = None
                 
-                # ESPAÇO: Sempre Player 1
                 if event.key == pygame.K_SPACE:
                     firing_player = players_list[0] 
-
-                # ENTER: Depende do modo
                 elif event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
                     if num_players == 1:
-                        firing_player = players_list[0] # P1 usa Enter também se estiver sozinho
+                        firing_player = players_list[0]
                     elif num_players == 2:
-                        # P2 usa Enter no modo coop
                         firing_player = next((p for p in players_list if p["id"] == 1), None)
 
-                if firing_player and (current_time_ticks - last_shot_time > SHOOT_COOLDOWN):
+                if firing_player and (current_time_ticks - firing_player["last_shot_time"] > SHOOT_COOLDOWN):
                     bullets.append(pygame.Rect(firing_player["rect"].right, firing_player["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT))
-                    last_shot_time = current_time_ticks
+                    firing_player["last_shot_time"] = current_time_ticks
 
-        # --- MOVIMENTAÇÃO ---
+        # --- MOVIMENTAÇÃO JOGADORES ---
         keys = pygame.key.get_pressed()
         for p in players_list:
             move_x, move_y = 0.0, 0.0
             
-            # --- PLAYER 1 (ID 0) ---
             if p["id"] == 0:
-                # WASD (Sempre ativo para P1)
                 if keys[pygame.K_w]: move_y -= 1.0
                 if keys[pygame.K_s]: move_y += 1.0
                 if keys[pygame.K_a]: move_x -= 1.0
                 if keys[pygame.K_d]: move_x += 1.0
-                
-                # Setas (Só funcionam para P1 se ele estiver SOZINHO)
                 if num_players == 1:
                     if keys[pygame.K_UP]: move_y -= 1.0
                     if keys[pygame.K_DOWN]: move_y += 1.0
                     if keys[pygame.K_LEFT]: move_x -= 1.0
                     if keys[pygame.K_RIGHT]: move_x += 1.0
-
-            # --- PLAYER 2 (ID 1) ---
             elif p["id"] == 1:
-                # Setas (Funcionam para P2 no multiplayer)
                 if keys[pygame.K_UP]: move_y -= 1.0
                 if keys[pygame.K_DOWN]: move_y += 1.0
                 if keys[pygame.K_LEFT]: move_x -= 1.0
                 if keys[pygame.K_RIGHT]: move_x += 1.0
 
-            # Joystick (Lógica Geral)
             if p["joy_id"] is not None and p["joy_id"] < len(joysticks):
                 try:
                     joy = joysticks[p["joy_id"]]
@@ -1053,46 +1206,68 @@ def run_game_boss(screen, num_players=1):
             p["rect"].x += move_x * PLAYER_MAX_VELOCITY * dt
             p["rect"].y += move_y * PLAYER_MAX_VELOCITY * dt
             
-            # Limites
             if p["rect"].top < 0: p["rect"].top = 0
             if p["rect"].bottom > GAME_HEIGHT: p["rect"].bottom = GAME_HEIGHT
             if p["rect"].left < 0: p["rect"].left = 0
             if p["rect"].right > GAME_WIDTH: p["rect"].right = GAME_WIDTH
 
-        # Lógica Boss (Giro)
-        for i in range(len(balloons_around_boss) - 1, -1, -1):
-            b = balloons_around_boss[i]
+        if not boss_defeated:
+            # --- MOVIMENTO DO BOSS PARA ESQUERDA ---
+            boss_center_x -= BOSS_MOVE_SPEED * dt
             
-            # --- LÓGICA DE EXPLOSÃO (Boss) ---
-            if b["exploding"]:
-                b["explosion_frame_index"] += EXPLOSION_ANIMATION_SPEED
-                anim_frames = explosion_animations.get(b["type"], [])
-                max_frames = len(anim_frames) if anim_frames else 0
-                if max_frames == 0 or b["explosion_frame_index"] >= max_frames:
-                    balloons_around_boss.pop(i)
-                continue 
+            # Movimento vertical sinusoidal para ficar mais dinâmico
+            boss_center_y = GAME_HEIGHT // 2 + math.sin(elapsed_time_sec * 0.8) * 80
+            
+            # Atualiza parallax com velocidade do boss
+            parallax_bg.update(BOSS_MOVE_SPEED * 0.1, dt)
+            
+            # --- VERIFICAÇÃO: BOSS CHEGOU NO JOGADOR ---
+            if boss_center_x <= BOSS_DANGER_ZONE:
+                pygame.mixer.music.stop()
+                return "GAME_OVER"
 
-            tx, ty = hexagon_points[b["target_idx"]]
-            cx, cy = b["rect"].center
-            dx, dy = tx - cx, ty - cy
-            dist = math.hypot(dx, dy)
-            step = BOSS_BALLOON_SPEED * dt
-            if dist <= max(4.0, step * 1.25):
-                b["rect"].center = (tx, ty)
-                b["target_idx"] = (b["target_idx"] + 1) % 6
-            else:
-                b["rect"].center = (int(cx + (dx/dist)*step), int(cy + (dy/dist)*step))
+            # --- ATUALIZAÇÃO DA ÓRBITA DOS BALÕES ---
+            orbit_angle_offset += BOSS_ORBIT_SPEED * dt
+            aura_pulse += dt * 3  # Para efeito visual
 
-        # Balas -> Balões Boss
+            # Atualiza posição dos balões em órbita
+            for i in range(len(balloons_around_boss) - 1, -1, -1):
+                b = balloons_around_boss[i]
+                
+                if b["exploding"]:
+                    b["explosion_frame_index"] += EXPLOSION_ANIMATION_SPEED
+                    anim_frames = explosion_animations.get(b["type"], [])
+                    max_frames = len(anim_frames) if anim_frames else 0
+                    if max_frames == 0 or b["explosion_frame_index"] >= max_frames:
+                        balloons_around_boss.pop(i)
+                    continue
+                
+                # Calcula posição orbital
+                current_angle = b["orbit_angle"] + orbit_angle_offset * b["orbit_speed_mult"]
+                b["rect"].centerx = int(boss_center_x + math.cos(current_angle) * b["orbit_radius"])
+                b["rect"].centery = int(boss_center_y + math.sin(current_angle) * b["orbit_radius"])
+
+            # Respawn de balões
+            balloon_respawn_timer += dt
+            if balloon_respawn_timer >= BALLOON_RESPAWN_INTERVAL:
+                balloon_respawn_timer = 0
+                # Mantém pelo menos 4 balões orbitando
+                active_balloons = len([b for b in balloons_around_boss if not b["exploding"]])
+                if active_balloons < 4:
+                    balloons_around_boss.append(spawn_new_balloon())
+
+        # --- COLISÃO BALAS ---
         for i in range(len(bullets) - 1, -1, -1):
             bullets[i].x += BULLET_SPEED
-            if bullets[i].left > GAME_WIDTH: bullets.pop(i); continue
+            if bullets[i].left > SCREEN_WIDTH: 
+                bullets.pop(i)
+                continue
             
             hit = False
+            
+            # Colisão com balões orbitantes
             for bi in range(len(balloons_around_boss) - 1, -1, -1):
                 b = balloons_around_boss[bi]
-                
-                # Ignora se já estiver explodindo
                 if b["exploding"]: continue
 
                 if bullets[i].colliderect(b["rect"]):
@@ -1108,23 +1283,65 @@ def run_game_boss(screen, num_players=1):
 
                     score_vs_time_local.append((snapshot_elapsed + elapsed_time_sec, current_score))
 
-                    # Toca som de acerto no boss (se disponível)
-                    try:
-                        hit_sound.play()
-                    except Exception:
-                        pass
+                    try: pop_sound.play()
+                    except: pass
                     
-                    # --- GATILHO EXPLOSÃO (Boss) ---
+                    # Partículas de explosão
+                    particles.extend(create_explosion_particles(b["rect"].centerx, b["rect"].centery, ITEM_COLORS.get(b["type"], WHITE)))
+                    
                     if b["type"] in explosion_animations and explosion_animations[b["type"]]:
                         b["exploding"] = True
                         b["explosion_frame_index"] = 0.0
                     else:
                         balloons_around_boss.pop(bi)
 
-                    bullets.pop(i); hit = True; break
+                    bullets.pop(i)
+                    hit = True
+                    break
+            
             if hit: continue
+            
+            # --- COLISÃO COM O BOSS ---
+            if not boss_defeated and i < len(bullets):
+                boss_hitbox = pygame.Rect(
+                    int(boss_center_x - BOSS_IMAGE_WIDTH // 2),
+                    int(boss_center_y - BOSS_IMAGE_HEIGHT // 2),
+                    BOSS_IMAGE_WIDTH, BOSS_IMAGE_HEIGHT
+                )
+                
+                if bullets[i].colliderect(boss_hitbox):
+                    boss_hp -= 1
+                    current_score += 500  # Pontos por acertar o boss
+                    score_vs_time_local.append((snapshot_elapsed + elapsed_time_sec, current_score))
+                    
+                    boss_hit_flash_until = current_time_ticks + 200
+                    screen_shake_until = current_time_ticks + 150
+                    screen_shake_intensity = 8
+                    
+                    try: hit_sound.play()
+                    except: pass
+                    
+                    # Partículas épicas de impacto
+                    particles.extend(create_hit_particles(int(boss_center_x), int(boss_center_y), 15))
+                    
+                    bullets.pop(i)
+                    
+                    # Boss derrotado!
+                    if boss_hp <= 0:
+                        boss_defeated = True
+                        current_score += BOSS_VICTORY_BONUS
+                        score_vs_time_local.append((snapshot_elapsed + elapsed_time_sec, current_score))
+                        
+                        # MEGA explosão de vitória
+                        for _ in range(5):
+                            px = int(boss_center_x + random.randint(-50, 50))
+                            py = int(boss_center_y + random.randint(-50, 50))
+                            particles.extend(create_explosion_particles(px, py, random.choice([(255, 50, 50), (255, 200, 0), (255, 100, 0)]), 20))
+                        
+                        screen_shake_until = current_time_ticks + 500
+                        screen_shake_intensity = 15
 
-        # Colisão Jogador -> Balões Boss
+        # --- COLISÃO JOGADOR COM BALÕES ---
         if current_time_ticks >= pos_hit_until_ms:
             for bi in range(len(balloons_around_boss) - 1, -1, -1):
                 b = balloons_around_boss[bi]
@@ -1133,22 +1350,46 @@ def run_game_boss(screen, num_players=1):
                 hit_p = False
                 for p in players_list:
                     if p["rect"].colliderect(b["rect"]):
-                        hit_sound.play(); player_lives -= 1; pos_hit_until_ms = current_time_ticks + 1000
-                        balloons_around_boss.pop(bi); hit_p = True; break
+                        try: hit_sound.play()
+                        except: pass
+                        player_lives -= 1
+                        pos_hit_until_ms = current_time_ticks + 1000
+                        
+                        particles.extend(create_hit_particles(b["rect"].centerx, b["rect"].centery))
+                        balloons_around_boss.pop(bi)
+                        hit_p = True
+                        break
                 if hit_p:
-                    if player_lives <= 0: pygame.mixer.music.stop(); return "GAME_OVER"
+                    if player_lives <= 0:
+                        pygame.mixer.music.stop()
+                        return "GAME_OVER"
                     break
 
-        # Render
+        # --- ATUALIZAÇÃO DAS PARTÍCULAS ---
+        particles = [p for p in particles if p.update(dt)]
+
+        # --- RENDER ---
         if (current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS):
             player_last_frame_update = current_time_ticks
             player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
 
+        # Screen shake offset
+        shake_offset_x, shake_offset_y = 0, 0
+        if current_time_ticks < screen_shake_until:
+            shake_offset_x = random.randint(-screen_shake_intensity, screen_shake_intensity)
+            shake_offset_y = random.randint(-screen_shake_intensity, screen_shake_intensity)
+
         screen.fill(BLACK)
-        pygame.draw.rect(screen, LIGHT_BLUE, (0, 0, GAME_WIDTH, GAME_HEIGHT))
+        
+        # Desenha parallax (com shake)
+        parallax_bg.draw(screen)
+        
+        # Warning overlay quando boss está perto
+        draw_warning_overlay(screen, boss_center_x, BOSS_DANGER_ZONE)
         
         frame_idx = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
 
+        # Desenha jogadores
         for p in players_list:
             draw_img = None
             if p["id"] == 0:
@@ -1160,38 +1401,99 @@ def run_game_boss(screen, num_players=1):
                         draw_img = p1_animation_frames[frame_idx].copy()
                         draw_img.fill((255, 100, 100), special_flags=pygame.BLEND_MULT)
             
+            draw_pos = (p["rect"].left + shake_offset_x, p["rect"].top + shake_offset_y)
+            
             if current_time_ticks < pos_hit_until_ms:
                 if (current_time_ticks // 150) % 2 == 0:
-                    if draw_img: screen.blit(draw_img, p["rect"].topleft)
-                    else: pygame.draw.rect(screen, p["color"], p["rect"])
+                    if draw_img: screen.blit(draw_img, draw_pos)
+                    else: pygame.draw.rect(screen, p["color"], p["rect"].move(shake_offset_x, shake_offset_y))
             else:
-                if draw_img: screen.blit(draw_img, p["rect"].topleft)
-                else: pygame.draw.rect(screen, p["color"], p["rect"])
+                if draw_img: screen.blit(draw_img, draw_pos)
+                else: pygame.draw.rect(screen, p["color"], p["rect"].move(shake_offset_x, shake_offset_y))
 
-        for b in bullets: pygame.draw.rect(screen, BULLET_COLOR, b)
-        pygame.draw.rect(screen, (200, 50, 50), boss_rect, width=4)
-        
-        for b in balloons_around_boss:
-            if b.get("exploding", False):
-                frame_index = int(b["explosion_frame_index"])
-                anim_frames = explosion_animations.get(b["type"], [])
-                if anim_frames and 0 <= frame_index < len(anim_frames):
-                    img = anim_frames[frame_index]
-                    center_x, center_y = b["rect"].center
-                    explosion_rect = img.get_rect()
-                    explosion_rect.center = (center_x, center_y)
-                    screen.blit(img, explosion_rect.topleft)
-            elif b["image"]: 
-                screen.blit(b["image"], b["rect"].topleft)
-            else: 
-                pygame.draw.circle(screen, ITEM_COLORS.get(b["type"], WHITE), b["rect"].center, ITEM_IMAGE_WIDTH // 2)
-        
-        if boss_sprite: screen.blit(boss_sprite, boss_rect.topleft)
+        # Desenha balas
+        for b in bullets:
+            if bullet_img:
+                screen.blit(bullet_img, (b.left + shake_offset_x, b.top + shake_offset_y))
+            else:
+                pygame.draw.rect(screen, BULLET_COLOR, b.move(shake_offset_x, shake_offset_y))
 
+        if not boss_defeated:
+            boss_draw_x = int(boss_center_x + shake_offset_x)
+            boss_draw_y = int(boss_center_y + shake_offset_y)
+            
+            # Aura pulsante ao redor do boss
+            aura_size = int(BOSS_ORBIT_RADIUS + 30 + math.sin(aura_pulse) * 10)
+            aura_alpha = int(50 + math.sin(aura_pulse * 2) * 30)
+            aura_color = (255, 100, 100) if boss_hp <= 2 else (100, 100, 255)
+            
+            # Desenha múltiplos círculos de aura
+            for i in range(3):
+                radius = aura_size - i * 15
+                if radius > 0:
+                    pygame.draw.circle(screen, aura_color, (boss_draw_x, boss_draw_y), radius, 2)
+            
+            # Desenha balões orbitantes
+            for b in balloons_around_boss:
+                draw_x = b["rect"].left + shake_offset_x
+                draw_y = b["rect"].top + shake_offset_y
+                
+                if b.get("exploding", False):
+                    frame_index = int(b["explosion_frame_index"])
+                    anim_frames = explosion_animations.get(b["type"], [])
+                    if anim_frames and 0 <= frame_index < len(anim_frames):
+                        img = anim_frames[frame_index]
+                        center_x, center_y = b["rect"].center
+                        explosion_rect = img.get_rect()
+                        explosion_rect.center = (center_x + shake_offset_x, center_y + shake_offset_y)
+                        screen.blit(img, explosion_rect.topleft)
+                elif b["image"]: 
+                    screen.blit(b["image"], (draw_x, draw_y))
+                else: 
+                    pygame.draw.circle(screen, ITEM_COLORS.get(b["type"], WHITE), 
+                                       (b["rect"].centerx + shake_offset_x, b["rect"].centery + shake_offset_y), 
+                                       ITEM_IMAGE_WIDTH // 2)
+            
+            # Desenha o boss (com flash quando leva dano)
+            if boss_sprite:
+                boss_img = boss_sprite.copy()
+                if current_time_ticks < boss_hit_flash_until:
+                    # Flash branco quando leva dano
+                    boss_img.fill((255, 255, 255), special_flags=pygame.BLEND_ADD)
+                
+                boss_rect_draw = boss_img.get_rect(center=(boss_draw_x, boss_draw_y))
+                screen.blit(boss_img, boss_rect_draw.topleft)
+            else:
+                # Fallback: desenha círculo
+                color = (255, 255, 255) if current_time_ticks < boss_hit_flash_until else (200, 50, 50)
+                pygame.draw.circle(screen, color, (boss_draw_x, boss_draw_y), BOSS_IMAGE_WIDTH // 2)
+            
+            # Barra de vida do boss
+            draw_boss_health_bar(screen, boss_hp, BOSS_MAX_HP, boss_draw_x, boss_draw_y)
+
+        # Desenha partículas
+        for p in particles:
+            p.draw(screen)
+
+        # HUD
         screen.blit(second_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE), (10, 10))
-        screen.blit(second_font.render("CENA DO BOSS - Prepare-se!", True, WHITE), (10, 45))
+        
+        if boss_defeated:
+            # Texto de vitória pulsante
+            victory_scale = 1.0 + math.sin(victory_animation_timer * 5) * 0.1
+            victory_text = title_font.render("VITÓRIA!", True, (255, 215, 0))
+            vt_rect = victory_text.get_rect(center=(SCREEN_WIDTH // 2, GAME_HEIGHT // 2))
+            screen.blit(victory_text, vt_rect)
+            
+            bonus_text = second_font.render(f"+{BOSS_VICTORY_BONUS} PONTOS!", True, (50, 255, 50))
+            bt_rect = bonus_text.get_rect(center=(SCREEN_WIDTH // 2, GAME_HEIGHT // 2 + 60))
+            screen.blit(bonus_text, bt_rect)
+        else:
+            screen.blit(second_font.render("DERROTE O BOSS!", True, (255, 100, 100)), (10, 45))
+        
         draw_player_lives(screen, player_lives)
 
+        # Gráficos
         rect1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
         rect2 = pygame.Rect(GRAPH_X_SPLIT_1, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
         rect3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
