@@ -88,15 +88,17 @@ clock = pygame.time.Clock()
 main_font = pygame.font.SysFont("Consolas", 18)
 title_font = pygame.font.SysFont("Consolas", 26, bold=True)
 
-# --- Configuração do Joystick Global ---
-joystick = None
+# --- Configuração dos Joysticks Globais ---
+joysticks = []
 JOYSTICK_DEADZONE = 0.1
 
-if pygame.joystick.get_count() > 0:
-    joystick = pygame.joystick.Joystick(0)
-    joystick.init()
-    print(f"Controle detectado: {joystick.get_name()}")
-else:
+for i in range(pygame.joystick.get_count()):
+    joy = pygame.joystick.Joystick(i)
+    joy.init()
+    joysticks.append(joy)
+    print(f"Controle {i} detectado: {joy.get_name()}")
+
+if not joysticks:
     print("Nenhum controle detectado. Usando teclado.")
 
 # --- Carregar Áudio ---
@@ -481,33 +483,65 @@ player_lives = 3
 
 player_rect = pygame.Rect(30, GAME_HEIGHT // 2 - player_height // 2, player_width, player_height)
 
-def run_game(screen):
-    # Variáveis de Controle de Dificuldade
+def run_game(screen, num_players=1):
+    # Variáveis de Controle de Dificuldade e Jogo
     current_item_speed = ITEM_INITIAL_SPEED
     last_speed_increase_time = pygame.time.get_ticks()
-
-    # Variáveis do Jogo
     items = []
     bullets = []
     item_spawn_timer = 0
     last_shot_time = 0
     pos_hit_until_ms = 0
+    
+    # --- LÓGICA DE CONTROLES FLEXÍVEL ---
+    # Definição de quem usa qual controle
+    # P1_CONTROLLER_ID: Qual joystick controla o Player 1 (None se for só teclado)
+    # P2_CONTROLLER_ID: Qual joystick controla o Player 2
+    
+    p1_controller_id = None
+    p2_controller_id = None
+    
+    # Se temos pelo menos 1 controle:
+    if len(joysticks) >= 1:
+        # Se for 1 Jogador, o controle 0 move ele.
+        if num_players == 1:
+            p1_controller_id = 0
+        
+        # Se forem 2 Jogadores:
+        elif num_players == 2:
+            if len(joysticks) == 1:
+                # Cenário: 1 Teclado + 1 Controle.
+                # Player 1 fica no Teclado. Player 2 pega o Controle 0.
+                p1_controller_id = None 
+                p2_controller_id = 0
+            else:
+                # Cenário: 2 Controles.
+                # Player 1 pega Controle 0. Player 2 pega Controle 1.
+                p1_controller_id = 0
+                p2_controller_id = 1
 
-    # Variáveis de Animação
+    # Configuração dos Retângulos dos Jogadores
+    players_list = []
+    
+    # Player 1
+    p1_rect = pygame.Rect(30, GAME_HEIGHT // 3, player_width, player_height)
+    players_list.append({"rect": p1_rect, "id": 0, "color": PLAYER_COLOR, "joy_id": p1_controller_id})
+
+    # Player 2
+    if num_players == 2:
+        p2_rect = pygame.Rect(30, (GAME_HEIGHT // 3) * 2, player_width, player_height)
+        players_list.append({"rect": p2_rect, "id": 1, "color": (255, 50, 50), "joy_id": p2_controller_id})
+
+    # Variáveis de Animação e Estado
     player_frame_index = 0
     player_last_frame_update = pygame.time.get_ticks()
     PLAYER_ANIMATION_SPEED_MS = 100
     PLAYER_ANIMATION_SEQUENCE = [1, 0, 2, 0]
-    
-    # Configuração da Animação de Explosão
-    EXPLOSION_ANIMATION_SPEED = 0.35 # Quanto maior, mais rápido
 
-    # Variáveis de Estado
     global current_score
     current_score = 0
     score_vs_time = [(0.0, 0)]
     start_time_ms = pygame.time.get_ticks()
-
     global player_lives
 
     stats_counts = {"red": 0, "green": 0, "purple": 0, "orange": 0}
@@ -515,212 +549,143 @@ def run_game(screen):
     INTERVAL_KEYS = list(stats_intervals.keys())
     INTERVAL_COLORS = {key: GRAPH_YELLOW for key in INTERVAL_KEYS}
     last_collection_time = pygame.time.get_ticks()
-    all_collection_intervals = []
 
-    # --- Loop Principal do Jogo ---
+    # --- Loop Principal ---
     running = True
     while running:
         dt = clock.tick(60) / 1000.0
         current_time_ticks = pygame.time.get_ticks()
         elapsed_time_sec = (current_time_ticks - start_time_ms) / 1000.0
 
-        # --- LÓGICA DE AUMENTO DE VELOCIDADE (DIFICULDADE) ---
+        # Dificuldade
         global ITEM_SPEED_INTERVAL, ITEM_SPEED_INCREASE
         if (current_time_ticks - last_speed_increase_time) / 1000.0 >= ITEM_SPEED_INTERVAL:
             current_item_speed += ITEM_SPEED_INCREASE
             last_speed_increase_time = current_time_ticks
-            print(f"Dificuldade Aumentada! Velocidade atual: {current_item_speed:.2f}")
-
-        # NOTA: Não resetamos mais joystick_x/y aqui. Lemos direto no movimento.
+            print(f"Dificuldade Aumentada! Velocidade: {current_item_speed:.2f}")
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.mixer.music.stop()
                 return "QUIT"
 
-            # --- EVENTOS DE BOTÕES (TIRO) ---
-            if joystick:
-                if event.type == pygame.JOYBUTTONDOWN:
-                    # ALTERADO DE 0 (A) PARA 2 (X)
-                    if event.button == 2:
-                        if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
-                            bullet_rect = pygame.Rect(player_rect.right, player_rect.centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
-                            bullets.append(bullet_rect)
-                            last_shot_time = current_time_ticks
-
-            # --- EVENTOS DE TECLADO (DISPARO) ---
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
-                        bullet_rect = pygame.Rect(player_rect.right, player_rect.centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
+            # --- TIRO (JOYSTICK) ---
+            if event.type == pygame.JOYBUTTONDOWN:
+                if event.button == 2: # Botão X (geralmente)
+                    triggered_joy_id = event.joy
+                    
+                    # Procura qual player é dono desse joystick
+                    shooter = None
+                    for p in players_list:
+                        if p["joy_id"] == triggered_joy_id:
+                            shooter = p
+                            break
+                    
+                    if shooter and (current_time_ticks - last_shot_time > SHOOT_COOLDOWN):
+                        bullet_rect = pygame.Rect(shooter["rect"].right, shooter["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
                         bullets.append(bullet_rect)
                         last_shot_time = current_time_ticks
 
-        # --- Aplicação do Movimento (Teclado e Controle Fluido) ---
+            # --- TIRO (TECLADO) ---
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    # Teclado SEMPRE atira pelo Player 1
+                    if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
+                        p1 = players_list[0]
+                        bullet_rect = pygame.Rect(p1["rect"].right, p1["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
+                        bullets.append(bullet_rect)
+                        last_shot_time = current_time_ticks
+
+        # --- MOVIMENTAÇÃO ---
         keys = pygame.key.get_pressed()
 
-        move_x = 0.0
-        move_y = 0.0
+        for p in players_list:
+            move_x = 0.0
+            move_y = 0.0
+            
+            # 1. Movimento via Teclado (Só Player 1)
+            if p["id"] == 0:
+                if keys[pygame.K_UP] or keys[pygame.K_w]: move_y -= 1.0
+                if keys[pygame.K_DOWN] or keys[pygame.K_s]: move_y += 1.0
+                if keys[pygame.K_LEFT] or keys[pygame.K_a]: move_x -= 1.0
+                if keys[pygame.K_RIGHT] or keys[pygame.K_d]: move_x += 1.0
+            
+            # 2. Movimento via Joystick (Se o player tiver um atribuído)
+            if p["joy_id"] is not None and p["joy_id"] < len(joysticks):
+                try:
+                    joy = joysticks[p["joy_id"]]
+                    axis_x = joy.get_axis(0)
+                    axis_y = joy.get_axis(1)
+                    if abs(axis_x) > JOYSTICK_DEADZONE: move_x += axis_x
+                    if abs(axis_y) > JOYSTICK_DEADZONE: move_y += axis_y
+                except:
+                    pass # Evita crash se controle desconectar
 
-        # Leitura do teclado
-        if keys[pygame.K_UP] or keys[pygame.K_w]:
-            move_y -= 1.0
-        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            move_y += 1.0
-        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-            move_x -= 1.0
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-            move_x += 1.0
-
-        # --- CORREÇÃO DO CONTROLE: Leitura direta dos eixos (Polling) ---
-        if joystick:
-            axis_x = joystick.get_axis(0)  # Horizontal
-            axis_y = joystick.get_axis(1)  # Vertical
-
-            if abs(axis_x) > JOYSTICK_DEADZONE:
-                move_x += axis_x
-            if abs(axis_y) > JOYSTICK_DEADZONE:
-                move_y += axis_y
-
-        # Normalizar vetor para evitar que diagonais sejam mais rápidas
-        length = math.hypot(move_x, move_y)
-        if length > 0:
-            if length > 1: # Se magnitude > 1, normaliza
+            # Normalização e Aplicação
+            length = math.hypot(move_x, move_y)
+            if length > 1:
                 move_x /= length
                 move_y /= length
 
-        # Aplicação do movimento fluido (dt-based)
-        player_rect.x += move_x * PLAYER_MAX_VELOCITY * dt
-        player_rect.y += move_y * PLAYER_MAX_VELOCITY * dt
+            p["rect"].x += move_x * PLAYER_MAX_VELOCITY * dt
+            p["rect"].y += move_y * PLAYER_MAX_VELOCITY * dt
 
-        # --- Limites do jogador (Vertical e Horizontal) ---
-        if player_rect.top < 0:
-            player_rect.top = 0
-        if player_rect.bottom > GAME_HEIGHT:
-            player_rect.bottom = GAME_HEIGHT
-        if player_rect.left < 0:
-            player_rect.left = 0
-        if player_rect.right > GAME_WIDTH:
-            player_rect.right = GAME_WIDTH
+            # Limites
+            if p["rect"].top < 0: p["rect"].top = 0
+            if p["rect"].bottom > GAME_HEIGHT: p["rect"].bottom = GAME_HEIGHT
+            if p["rect"].left < 0: p["rect"].left = 0
+            if p["rect"].right > GAME_WIDTH: p["rect"].right = GAME_WIDTH
 
-        # --- Spawn de inimigos ---
+        # --- SPAWN E COLISÃO (ITEMS) ---
         item_spawn_timer += 1
         if item_spawn_timer >= ITEM_SPAWN_RATE:
             item_spawn_timer = 0
             item_type = random.choices(COLOR_TYPES, weights=[ITEM_PROBABILITIES[t] for t in COLOR_TYPES], k=1)[0]
-            item_color = ITEM_COLORS[item_type]
+            items.append({"rect": pygame.Rect(GAME_WIDTH + ITEM_IMAGE_WIDTH, random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT), ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT), 
+                          "color": ITEM_COLORS[item_type], "type": item_type, "image": balloon_images.get(item_type)})
 
-            item_x = GAME_WIDTH + ITEM_IMAGE_WIDTH
-            item_y = random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT)
-
-            new_item_rect = pygame.Rect(item_x, item_y, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
-            
-            # --- NOVAS VARIÁVEIS NO DICIONÁRIO ---
-            items.append({
-                "rect": new_item_rect, 
-                "color": item_color, 
-                "type": item_type, 
-                "image": balloon_images.get(item_type),
-                "exploding": False, # Estado inicial
-                "explosion_frame_index": 0.0 # Controle de frame
-            })
-
-        # Mover projéteis
         for i in range(len(bullets) - 1, -1, -1):
-            bullet = bullets[i]
-            bullet.x += BULLET_SPEED
-            if bullet.left > GAME_WIDTH:
-                bullets.pop(i)
+            bullets[i].x += BULLET_SPEED
+            if bullets[i].left > GAME_WIDTH: bullets.pop(i)
 
-        # Mover e Atualizar inimigos
         for i in range(len(items) - 1, -1, -1):
-            item = items[i]
-            
-            # --- LÓGICA DE EXPLOSÃO ---
-            if item["exploding"]:
-                item["explosion_frame_index"] += EXPLOSION_ANIMATION_SPEED
-                
-                # Seleciona a animação correta para saber o tamanho máximo
-                anim_frames = explosion_animations.get(item["type"], [])
-                max_frames = len(anim_frames) if anim_frames else 0
-                
-                # Se a animação acabou ou não existe, remove o item
-                if max_frames == 0 or item["explosion_frame_index"] >= max_frames:
+            items[i]["rect"].x -= current_item_speed
+            if items[i]["rect"].right < 0:
+                items.pop(i); continue
+
+            # Colisão Jogador
+            if current_time_ticks >= pos_hit_until_ms:
+                hit = False
+                for p in players_list:
+                    if p["rect"].colliderect(items[i]["rect"]):
+                        hit_sound.play(); player_lives -= 1; pos_hit_until_ms = current_time_ticks + 1000; hit = True
+                        print(f"Player {p['id']+1} hit!"); break
+                if hit:
                     items.pop(i)
-                continue # Pula o movimento se estiver explodindo
-
-            item["rect"].x -= current_item_speed
-
-            if item["rect"].right < 0:
-                items.pop(i)
-                continue
-
-            # Colisão com JOGADOR
-            if player_rect.colliderect(item["rect"]):
-                if current_time_ticks < pos_hit_until_ms:
+                    if player_lives <= 0: pygame.mixer.music.stop(); return "GAME_OVER"
                     continue
 
-                hit_sound.play()
-                items.pop(i)
-                player_lives -= 1
-                pos_hit_until_ms = current_time_ticks + 1000
-                print(f"Jogador atingido! Vidas restantes: {player_lives}")
-                if player_lives <= 0:
-                    print("GAME OVER! Vidas esgotadas.")
-                    pygame.mixer.music.stop()
-                    return "GAME_OVER"
-
-        # Colisão PROJÉTIL-INIMIGO
+        # Colisão Bala-Inimigo
         for b_idx in range(len(bullets) - 1, -1, -1):
-            bullet = bullets[b_idx]
-            hit_detected = False
-
+            hit = False
             for i_idx in range(len(items) - 1, -1, -1):
-                item = items[i_idx]
-                
-                # Ignora se já estiver explodindo
-                if item["exploding"]:
-                    continue
-
-                if bullet.colliderect(item["rect"]):
-                    item_type = item["type"]
+                if bullets[b_idx].colliderect(items[i_idx]["rect"]):
+                    item_type = items[i_idx]["type"]
                     current_score += ITEM_SCORES[item_type]
-
                     score_vs_time.append((elapsed_time_sec, current_score))
                     stats_counts[item_type] += 1
-
-                    interval_sec = (current_time_ticks - last_collection_time) / 1000.0
-                    last_collection_time = current_time_ticks
-                    all_collection_intervals.append(interval_sec)
-
-                    if interval_sec < 0.7:
-                        stats_intervals["0-0.7s"] += 1
-                    elif interval_sec < 1.4:
-                        stats_intervals["0.7-1.4"] += 1
-                    elif interval_sec < 2.0:
-                        stats_intervals["1.4-2.0"] += 1
-                    else:
-                        stats_intervals["2.0s+"] += 1
-
-                    # --- GATILHO DA EXPLOSÃO ---
-                    # Em vez de pop(), ativamos a explosão
-                    # Verifica se existe animação para este tipo, senão remove logo
-                    if item_type in explosion_animations and explosion_animations[item_type]:
-                        item["exploding"] = True
-                        item["explosion_frame_index"] = 0.0
-                    else:
-                        items.pop(i_idx) # Sem animação, remove direto
                     
-                    bullets.pop(b_idx)
+                    interval = (current_time_ticks - last_collection_time) / 1000.0
+                    last_collection_time = current_time_ticks
+                    if interval < 0.7: stats_intervals["0-0.7s"] += 1
+                    elif interval < 1.4: stats_intervals["0.7-1.4"] += 1
+                    elif interval < 2.0: stats_intervals["1.4-2.0"] += 1
+                    else: stats_intervals["2.0s+"] += 1
 
-                    hit_detected = True
-                    break
-
-            if hit_detected:
-                continue
+                    items.pop(i_idx); bullets.pop(b_idx); hit = True; break
+            if hit: continue
 
         if current_score >= SCORE_TO_BOSS:
-            print(f"BOSS FIGHT DESBLOQUEADA! Pontuação: {current_score}")
             pygame.mixer.music.stop()
             global boss_stats_counts, boss_stats_intervals, boss_score_vs_time, boss_snapshot_elapsed
             boss_stats_counts = stats_counts.copy()
@@ -729,60 +694,82 @@ def run_game(screen):
             boss_snapshot_elapsed = elapsed_time_sec
             return "BOSS_FIGHT"
 
-        # --- Atualização da Animação do Player ---
-        if player_animation_frames:
-            if current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS:
-                player_last_frame_update = current_time_ticks
-                player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
+        # Animação
+        if player_animation_frames and (current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS):
+            player_last_frame_update = current_time_ticks
+            player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
 
         # --- Renderização ---
         screen.fill(BLACK)
+        pygame.draw.rect(screen, LIGHT_BLUE, (0, 0, GAME_WIDTH, GAME_HEIGHT))
 
-        current_player_img = None
-        if player_animation_frames:
-            actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
-            current_player_img = player_animation_frames[actual_frame_index]
+        curr_img = player_animation_frames[PLAYER_ANIMATION_SEQUENCE[player_frame_index]] if player_animation_frames else None
+        
+        for p in players_list:
+            draw_img = curr_img
+            if p["id"] == 1 and draw_img:
+                draw_img = draw_img.copy(); draw_img.fill((255, 100, 100), special_flags=pygame.BLEND_MULT)
+            
+            if current_time_ticks < pos_hit_until_ms:
+                 if (current_time_ticks // 150) % 2 == 0: 
+                     if draw_img: screen.blit(draw_img, p["rect"].topleft)
+                     else: pygame.draw.rect(screen, p["color"], p["rect"])
+            else:
+                if draw_img: screen.blit(draw_img, p["rect"].topleft)
+                else: pygame.draw.rect(screen, p["color"], p["rect"])
 
-        draw_game(player_rect, items, bullets, current_player_img, pos_hit_until_ms, current_time_ticks)
+        for it in items:
+            if it["image"]: screen.blit(it["image"], it["rect"].topleft)
+            else: pygame.draw.circle(screen, it["color"], it["rect"].center, it["rect"].width // 2)
+        for b in bullets: pygame.draw.rect(screen, BULLET_COLOR, b)
 
-        score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
-        screen.blit(score_text, (10, 10))
+        screen.blit(title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE), (10, 10))
         draw_player_lives(screen, player_lives)
 
-        # --- Gráficos ---
-        rect_grafico_1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
-        rect_grafico_2 = pygame.Rect(GRAPH_X_SPLIT_1, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
-        rect_grafico_3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        # Gráficos
+        rect1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        rect2 = pygame.Rect(GRAPH_X_SPLIT_1, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        rect3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        draw_histogram(screen, stats_counts, COLOR_TYPES, ITEM_COLORS, "Contagem", rect1, lambda t: get_empirical_prob(t, stats_counts))
+        draw_scatter_plot(screen, score_vs_time, rect2, elapsed_time_sec)
+        draw_histogram(screen, stats_intervals, INTERVAL_KEYS, INTERVAL_COLORS, "Intervalo de Destruição", rect3, lambda k: get_empirical_prob(k, stats_intervals))
 
-        draw_histogram(screen, stats_counts, COLOR_TYPES, ITEM_COLORS,
-                       "Contagem", rect_grafico_1,
-                       expected_prob_func=lambda t: get_empirical_prob(t, stats_counts))
-
-        draw_scatter_plot(screen, score_vs_time, rect_grafico_2, elapsed_time_sec)
-
-        draw_histogram(screen, stats_intervals, INTERVAL_KEYS, INTERVAL_COLORS,
-                       "Intervalo de Destruição", rect_grafico_3,
-                       expected_prob_func=lambda k: get_empirical_prob(k, stats_intervals))
-
-        # --- Divisórias ---
         pygame.draw.line(screen, WHITE, (0, GAME_HEIGHT), (SCREEN_WIDTH, GAME_HEIGHT), 3)
         pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_1, GAME_HEIGHT), (GRAPH_X_SPLIT_1, SCREEN_HEIGHT), 3)
         pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_2, GAME_HEIGHT), (GRAPH_X_SPLIT_2, SCREEN_HEIGHT), 3)
-
         pygame.display.flip()
-
-
 # ----------------------------------------------------------------------
 # --- CENA DO BOSS (PREPARAÇÃO) ---
 # ----------------------------------------------------------------------
 
 boss_rect = pygame.Rect(962, 262, BOSS_IMAGE_WIDTH, BOSS_IMAGE_HEIGHT)
 
-def run_game_boss(screen):
-    global current_score
-    global player_lives
+def run_game_boss(screen, num_players=1):
+    global current_score, player_lives, joysticks
 
-    items = []  # não haverá novos itens
+    # --- LÓGICA DE CONTROLES (Igual à run_game) ---
+    p1_controller_id = None
+    p2_controller_id = None
+    
+    if len(joysticks) >= 1:
+        if num_players == 1:
+            p1_controller_id = 0
+        elif num_players == 2:
+            if len(joysticks) == 1:
+                p1_controller_id = None; p2_controller_id = 0
+            else:
+                p1_controller_id = 0; p2_controller_id = 1
+
+    players_list = []
+    # Player 1
+    players_list.append({"rect": pygame.Rect(100, GAME_HEIGHT // 3, player_width, player_height), 
+                         "id": 0, "color": PLAYER_COLOR, "joy_id": p1_controller_id})
+    # Player 2
+    if num_players == 2:
+        players_list.append({"rect": pygame.Rect(100, (GAME_HEIGHT // 3) * 2, player_width, player_height), 
+                             "id": 1, "color": (255, 50, 50), "joy_id": p2_controller_id})
+
+    items = []
     bullets = []
     last_shot_time = 0
     pos_hit_until_ms = 0
@@ -795,53 +782,22 @@ def run_game_boss(screen):
     start_time_ms = pygame.time.get_ticks()
     last_collection_time_boss = start_time_ms
 
-    # Configura balões ao redor do boss
+    # Configuração do Boss (Hexágono)
     boss_center_x, boss_center_y = boss_rect.center
     radius_x = boss_rect.width // 2 + 100
     radius_y = boss_rect.height // 2 + 100
-    angles_deg = [0, 60, 120, 180, 240, 300]
-
-    hexagon_points = []
-    for ang in angles_deg:
-        rad = math.radians(ang)
-        cx = int(boss_center_x + radius_x * math.cos(rad))
-        cy = int(boss_center_y + radius_y * math.sin(rad))
-        hexagon_points.append((cx, cy))
-
+    hexagon_points = [(int(boss_center_x + radius_x * math.cos(math.radians(a))), int(boss_center_y + radius_y * math.sin(math.radians(a)))) for a in [0, 60, 120, 180, 240, 300]]
     BOSS_BALLOON_SPEED = 160
 
     balloons_around_boss = []
     for i, (cx, cy) in enumerate(hexagon_points):
         chosen_type = random.choice(COLOR_TYPES)
-        sprite = balloon_images.get(chosen_type)
-        if sprite:
-            rect = sprite.get_rect(center=(cx, cy))
-        else:
-            rect = pygame.Rect(cx - ITEM_IMAGE_WIDTH // 2, cy - ITEM_IMAGE_HEIGHT // 2, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
-        target_idx = (i + 1) % len(hexagon_points)  # sentido horário
-        balloons_around_boss.append({
-            "type": chosen_type,
-            "image": sprite,
-            "rect": rect,
-            "target_idx": target_idx
-        })
+        balloons_around_boss.append({"type": chosen_type, "image": balloon_images.get(chosen_type), "rect": balloon_images.get(chosen_type).get_rect(center=(cx, cy)) if balloon_images.get(chosen_type) else pygame.Rect(cx, cy, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT), "target_idx": (i + 1) % 6})
 
     global boss_stats_counts, boss_stats_intervals, boss_score_vs_time, boss_snapshot_elapsed
-    if boss_stats_counts is None:
-        stats_counts_local = {k: 0 for k in COLOR_TYPES}
-    else:
-        stats_counts_local = boss_stats_counts.copy()
-
-    if boss_stats_intervals is None:
-        stats_intervals_local = {"0-0.7s": 0, "0.7-1.4": 0, "1.4-2.0": 0, "2.0s+": 0}
-    else:
-        stats_intervals_local = boss_stats_intervals.copy()
-
-    if boss_score_vs_time is None:
-        score_vs_time_local = [(0.0, current_score)]
-    else:
-        score_vs_time_local = boss_score_vs_time.copy()
-
+    stats_counts_local = boss_stats_counts.copy() if boss_stats_counts else {k: 0 for k in COLOR_TYPES}
+    stats_intervals_local = boss_stats_intervals.copy() if boss_stats_intervals else {"0-0.7s": 0, "0.7-1.4": 0, "1.4-2.0": 0, "2.0s+": 0}
+    score_vs_time_local = boss_score_vs_time.copy() if boss_score_vs_time else [(0.0, current_score)]
     snapshot_elapsed = boss_snapshot_elapsed
 
     running = True
@@ -851,237 +807,193 @@ def run_game_boss(screen):
         elapsed_time_sec = (current_time_ticks - start_time_ms) / 1000.0
 
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return "QUIT"
+            if event.type == pygame.QUIT: return "QUIT"
 
-            if joystick:
-                if event.type == pygame.JOYBUTTONDOWN:
-                    # ALTERADO DE 0 (A) PARA 2 (X)
-                    if event.button == 2:
-                        if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
-                            bullet_rect = pygame.Rect(player_rect.right, player_rect.centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
-                            bullets.append(bullet_rect)
-                            last_shot_time = current_time_ticks
+            # Tiro Joystick (Mapeado pelo joy_id)
+            if event.type == pygame.JOYBUTTONDOWN and event.button == 2:
+                triggered_joy_id = event.joy
+                shooter = next((p for p in players_list if p["joy_id"] == triggered_joy_id), None)
+                if shooter and (current_time_ticks - last_shot_time > SHOOT_COOLDOWN):
+                    bullets.append(pygame.Rect(shooter["rect"].right, shooter["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT))
+                    last_shot_time = current_time_ticks
 
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
-                        bullet_rect = pygame.Rect(player_rect.right, player_rect.centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT)
-                        bullets.append(bullet_rect)
-                        last_shot_time = current_time_ticks
+            # Tiro Teclado (Sempre P1)
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                if current_time_ticks - last_shot_time > SHOOT_COOLDOWN:
+                    bullets.append(pygame.Rect(players_list[0]["rect"].right, players_list[0]["rect"].centery - BULLET_HEIGHT // 2, BULLET_WIDTH, BULLET_HEIGHT))
+                    last_shot_time = current_time_ticks
 
-        # Movimento do jogador
+        # Movimento
         keys = pygame.key.get_pressed()
-        move_x = 0.0
-        move_y = 0.0
-        if keys[pygame.K_UP] or keys[pygame.K_w]: move_y -= 1.0
-        if keys[pygame.K_DOWN] or keys[pygame.K_s]: move_y += 1.0
-        if keys[pygame.K_LEFT] or keys[pygame.K_a]: move_x -= 1.0
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d]: move_x += 1.0
+        for p in players_list:
+            move_x, move_y = 0.0, 0.0
+            
+            # Teclado (Só P1)
+            if p["id"] == 0:
+                if keys[pygame.K_UP] or keys[pygame.K_w]: move_y -= 1.0
+                if keys[pygame.K_DOWN] or keys[pygame.K_s]: move_y += 1.0
+                if keys[pygame.K_LEFT] or keys[pygame.K_a]: move_x -= 1.0
+                if keys[pygame.K_RIGHT] or keys[pygame.K_d]: move_x += 1.0
 
-        # --- CORREÇÃO DO CONTROLE: Leitura direta dos eixos (Polling) ---
-        if joystick:
-            axis_x = joystick.get_axis(0)
-            axis_y = joystick.get_axis(1)
+            # Joystick
+            if p["joy_id"] is not None and p["joy_id"] < len(joysticks):
+                try:
+                    joy = joysticks[p["joy_id"]]
+                    if abs(joy.get_axis(0)) > JOYSTICK_DEADZONE: move_x += joy.get_axis(0)
+                    if abs(joy.get_axis(1)) > JOYSTICK_DEADZONE: move_y += joy.get_axis(1)
+                except: pass
 
-            if abs(axis_x) > JOYSTICK_DEADZONE:
-                move_x += axis_x
-            if abs(axis_y) > JOYSTICK_DEADZONE:
-                move_y += axis_y
+            length = math.hypot(move_x, move_y)
+            if length > 1: move_x /= length; move_y /= length
+            p["rect"].x += move_x * PLAYER_MAX_VELOCITY * dt
+            p["rect"].y += move_y * PLAYER_MAX_VELOCITY * dt
+            
+            # Limites
+            if p["rect"].top < 0: p["rect"].top = 0
+            if p["rect"].bottom > GAME_HEIGHT: p["rect"].bottom = GAME_HEIGHT
+            if p["rect"].left < 0: p["rect"].left = 0
+            if p["rect"].right > GAME_WIDTH: p["rect"].right = GAME_WIDTH
 
-        # Normalização
-        length = math.hypot(move_x, move_y)
-        if length > 0:
-            if length > 1:
-                move_x /= length
-                move_y /= length
-
-        player_rect.x += move_x * PLAYER_MAX_VELOCITY * dt
-        player_rect.y += move_y * PLAYER_MAX_VELOCITY * dt
-
-        # Limites do jogador
-        if player_rect.top < 0: player_rect.top = 0
-        if player_rect.bottom > GAME_HEIGHT: player_rect.bottom = GAME_HEIGHT
-        if player_rect.left < 0: player_rect.left = 0
-        if player_rect.right > GAME_WIDTH: player_rect.right = GAME_WIDTH
-
-        # Movimento rotatório dos balões
+        # Lógica Boss (Giro)
         for b in balloons_around_boss:
             tx, ty = hexagon_points[b["target_idx"]]
             cx, cy = b["rect"].center
-            dx = tx - cx
-            dy = ty - cy
+            dx, dy = tx - cx, ty - cy
             dist = math.hypot(dx, dy)
             step = BOSS_BALLOON_SPEED * dt
             if dist <= max(4.0, step * 1.25):
                 b["rect"].center = (tx, ty)
-                b["target_idx"] = (b["target_idx"] + 1) % len(hexagon_points)
+                b["target_idx"] = (b["target_idx"] + 1) % 6
             else:
-                nx = dx / dist if dist != 0 else 0
-                ny = dy / dist if dist != 0 else 0
-                cx += nx * step
-                cy += ny * step
-                b["rect"].center = (int(cx), int(cy))
+                b["rect"].center = (int(cx + (dx/dist)*step), int(cy + (dy/dist)*step))
 
-        # Mover Balas
+        # Balas -> Balões Boss
         for i in range(len(bullets) - 1, -1, -1):
-            bullet = bullets[i]
-            bullet.x += BULLET_SPEED
-            if bullet.left > GAME_WIDTH:
-                bullets.pop(i)
-                continue
-
-            # Colisão PROJÉTIL - BALÕES DO BOSS
+            bullets[i].x += BULLET_SPEED
+            if bullets[i].left > GAME_WIDTH: bullets.pop(i); continue
+            
             hit = False
             for bi in range(len(balloons_around_boss) - 1, -1, -1):
-                b = balloons_around_boss[bi]
-                if bullet.colliderect(b["rect"]):
-                    b_type = b.get("type")
-                    current_score += ITEM_SCORES.get(b_type, 0)
-
-                    try:
-                        stats_counts_local[b_type] = stats_counts_local.get(b_type, 0) + 1
-                    except Exception:
-                        pass
-
-                    interval_sec = (current_time_ticks - last_collection_time_boss) / 1000.0
+                if bullets[i].colliderect(balloons_around_boss[bi]["rect"]):
+                    b = balloons_around_boss.pop(bi)
+                    current_score += ITEM_SCORES.get(b["type"], 0)
+                    stats_counts_local[b["type"]] += 1
+                    
+                    interval = (current_time_ticks - last_collection_time_boss) / 1000.0
                     last_collection_time_boss = current_time_ticks
-                    if interval_sec < 0.7:
-                        stats_intervals_local["0-0.7s"] = stats_intervals_local.get("0-0.7s", 0) + 1
-                    elif interval_sec < 1.4:
-                        stats_intervals_local["0.7-1.4"] = stats_intervals_local.get("0.7-1.4", 0) + 1
-                    elif interval_sec < 2.0:
-                        stats_intervals_local["1.4-2.0"] = stats_intervals_local.get("1.4-2.0", 0) + 1
-                    else:
-                        stats_intervals_local["2.0s+"] = stats_intervals_local.get("2.0s+", 0) + 1
+                    if interval < 0.7: stats_intervals_local["0-0.7s"] += 1
+                    elif interval < 1.4: stats_intervals_local["0.7-1.4"] += 1
+                    elif interval < 2.0: stats_intervals_local["1.4-2.0"] += 1
+                    else: stats_intervals_local["2.0s+"] += 1
 
-                    score_time = snapshot_elapsed + elapsed_time_sec
-                    score_vs_time_local.append((score_time, current_score))
+                    score_vs_time_local.append((snapshot_elapsed + elapsed_time_sec, current_score))
+                    bullets.pop(i); hit = True; break
+            if hit: continue
 
-                    balloons_around_boss.pop(bi)
-                    bullets.pop(i)
-                    hit = True
+        # Colisão Jogador -> Balões Boss
+        if current_time_ticks >= pos_hit_until_ms:
+            for bi in range(len(balloons_around_boss) - 1, -1, -1):
+                hit_p = False
+                for p in players_list:
+                    if p["rect"].colliderect(balloons_around_boss[bi]["rect"]):
+                        hit_sound.play(); player_lives -= 1; pos_hit_until_ms = current_time_ticks + 1000
+                        balloons_around_boss.pop(bi); hit_p = True; break
+                if hit_p:
+                    if player_lives <= 0: pygame.mixer.music.stop(); return "GAME_OVER"
                     break
-            if hit:
-                continue
 
-        # Animação player
-        if player_animation_frames:
-            if current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS:
-                player_last_frame_update = current_time_ticks
-                player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
+        # Render
+        if player_animation_frames and (current_time_ticks - player_last_frame_update > PLAYER_ANIMATION_SPEED_MS):
+            player_last_frame_update = current_time_ticks
+            player_frame_index = (player_frame_index + 1) % len(PLAYER_ANIMATION_SEQUENCE)
 
-        # Colisão jogador - balões boss
-        for bi in range(len(balloons_around_boss) - 1, -1, -1):
-            b = balloons_around_boss[bi]
-            if player_rect.colliderect(b["rect"]):
-                if current_time_ticks < pos_hit_until_ms:
-                    continue
-
-                hit_sound.play()
-                balloons_around_boss.pop(bi)
-                player_lives -= 1
-                pos_hit_until_ms = current_time_ticks + 1000
-                print(f"Jogador atingido pelo boss! Vidas restantes: {player_lives}")
-                if player_lives <= 0:
-                    print("GAME OVER! Vidas esgotadas na cena do boss.")
-                    pygame.mixer.music.stop()
-                    return "GAME_OVER"
-
-        # Renderização
         screen.fill(BLACK)
-        current_player_img = None
-        if player_animation_frames:
-            actual_frame_index = PLAYER_ANIMATION_SEQUENCE[player_frame_index]
-            current_player_img = player_animation_frames[actual_frame_index]
+        pygame.draw.rect(screen, LIGHT_BLUE, (0, 0, GAME_WIDTH, GAME_HEIGHT))
+        
+        curr_img = player_animation_frames[PLAYER_ANIMATION_SEQUENCE[player_frame_index]] if player_animation_frames else None
+        for p in players_list:
+            draw_img = curr_img
+            if p["id"] == 1 and draw_img: draw_img = draw_img.copy(); draw_img.fill((255, 100, 100), special_flags=pygame.BLEND_MULT)
+            
+            if current_time_ticks < pos_hit_until_ms:
+                if (current_time_ticks // 150) % 2 == 0:
+                    if draw_img: screen.blit(draw_img, p["rect"].topleft)
+                    else: pygame.draw.rect(screen, p["color"], p["rect"])
+            else:
+                if draw_img: screen.blit(draw_img, p["rect"].topleft)
+                else: pygame.draw.rect(screen, p["color"], p["rect"])
 
-        draw_game(player_rect, items, bullets, current_player_img, pos_hit_until_ms, current_time_ticks)
-
+        for b in bullets: pygame.draw.rect(screen, BULLET_COLOR, b)
         pygame.draw.rect(screen, (200, 50, 50), boss_rect, width=4)
         for b in balloons_around_boss:
-            if b["image"]:
-                screen.blit(b["image"], b["rect"].topleft)
-            else:
-                center = b["rect"].center
-                pygame.draw.circle(screen, ITEM_COLORS.get(b["type"], WHITE), center, ITEM_IMAGE_WIDTH // 2)
+            if b["image"]: screen.blit(b["image"], b["rect"].topleft)
+            else: pygame.draw.circle(screen, ITEM_COLORS.get(b["type"], WHITE), b["rect"].center, ITEM_IMAGE_WIDTH // 2)
+        if boss_sprite: screen.blit(boss_sprite, boss_rect.topleft)
 
-        if boss_sprite:
-            screen.blit(boss_sprite, boss_rect.topleft)
-
-        score_text = title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE)
-        boss_text = title_font.render("CENA DO BOSS - Prepare-se!", True, WHITE)
-        screen.blit(score_text, (10, 10))
-        screen.blit(boss_text, (10, 45))
+        screen.blit(title_font.render(f"PONTUAÇÃO: {current_score}", True, WHITE), (10, 10))
         draw_player_lives(screen, player_lives)
 
-        rect_grafico_1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
-        rect_grafico_2 = pygame.Rect(GRAPH_X_SPLIT_1, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
-        rect_grafico_3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
-
-        INTERVAL_KEYS_LOCAL = list(stats_intervals_local.keys())
-        INTERVAL_COLORS_LOCAL = {key: GRAPH_YELLOW for key in INTERVAL_KEYS_LOCAL}
-
-        draw_histogram(screen, stats_counts_local, COLOR_TYPES, ITEM_COLORS,
-                "Contagem", rect_grafico_1,
-                expected_prob_func=lambda t: get_empirical_prob(t, stats_counts_local))
-
-        draw_scatter_plot(screen, score_vs_time_local, rect_grafico_2, snapshot_elapsed + elapsed_time_sec)
-
-        draw_histogram(screen, stats_intervals_local, INTERVAL_KEYS_LOCAL, INTERVAL_COLORS_LOCAL,
-                "Intervalo de Destruição", rect_grafico_3,
-                expected_prob_func=lambda k: get_empirical_prob(k, stats_intervals_local))
+        rect1 = pygame.Rect(0, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        rect2 = pygame.Rect(GRAPH_X_SPLIT_1, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        rect3 = pygame.Rect(GRAPH_X_SPLIT_2, GAME_HEIGHT, GRAPH_WIDTH_PER_PLOT, GRAPH_HEIGHT)
+        draw_histogram(screen, stats_counts_local, COLOR_TYPES, ITEM_COLORS, "Contagem", rect1, lambda t: get_empirical_prob(t, stats_counts_local))
+        draw_scatter_plot(screen, score_vs_time_local, rect2, snapshot_elapsed + elapsed_time_sec)
+        draw_histogram(screen, stats_intervals_local, list(stats_intervals_local.keys()), {k: GRAPH_YELLOW for k in stats_intervals_local}, "Intervalo de Destruição", rect3, lambda k: get_empirical_prob(k, stats_intervals_local))
 
         pygame.draw.line(screen, WHITE, (0, GAME_HEIGHT), (SCREEN_WIDTH, GAME_HEIGHT), 3)
         pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_1, GAME_HEIGHT), (GRAPH_X_SPLIT_1, SCREEN_HEIGHT), 3)
         pygame.draw.line(screen, WHITE, (GRAPH_X_SPLIT_2, GAME_HEIGHT), (GRAPH_X_SPLIT_2, SCREEN_HEIGHT), 3)
-
         pygame.display.flip()
-
 # ----------------------------------------------------------------------
 # --- LOOP PRINCIPAL DA APLICAÇÃO ---
 # ----------------------------------------------------------------------
 
 def main():
-    global joystick
+    global joysticks
     global player_lives
 
     current_state = "MENU"
+    selected_num_players = 1 # Padrão
 
     while True:
         if current_state == "MENU":
-            # Assume que menu.show_menu existe e retorna "PLAY" ou "QUIT"
             result = menu.show_menu(screen, SCREEN_WIDTH, SCREEN_HEIGHT, title_font, main_font)
             if result == "PLAY":
                 current_state = "GAME"
+                selected_num_players = 1
                 player_lives = 3
-                try:
-                    pygame.mixer.music.play(-1)
-                except pygame.error:
-                    print("Não foi possível tocar a música.")
+                try: pygame.mixer.music.play(-1)
+                except: pass
+            
+            elif result == "PLAY_2P":
+                current_state = "GAME"
+                selected_num_players = 2
+                player_lives = 3 # Vidas compartilhadas? Ou aumentamos para 5? Mantenho 3 por desafio.
+                try: pygame.mixer.music.play(-1)
+                except: pass
+
             elif result == "QUIT":
                 break
 
         elif current_state == "GAME":
-            result = run_game(screen)
+            # Passamos o numero de jogadores aqui
+            result = run_game(screen, num_players=selected_num_players)
+            
             if result == "GAME_OVER":
-                final_score = current_score
-                print(f"Fim de Jogo. Pontuação Final: {final_score}")
+                print(f"Fim de Jogo. Pontuação Final: {current_score}")
                 current_state = "MENU"
-
             elif result == "BOSS_FIGHT":
                 current_state = "BOSS"
-
             elif result == "QUIT":
                 break
 
         elif current_state == "BOSS":
-            result = run_game_boss(screen)
+            # Passamos o numero de jogadores aqui também
+            result = run_game_boss(screen, num_players=selected_num_players)
 
             if result == "GAME_OVER":
-                final_score = current_score
-                print(f"Fim de Jogo. Pontuação Final: {final_score}")
+                print(f"Fim de Jogo. Pontuação Final: {current_score}")
                 current_state = "MENU"
-
             elif result == "QUIT":
                 break
     pygame.quit()
