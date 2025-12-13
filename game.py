@@ -137,8 +137,13 @@ except pygame.error as e:
 
 
 # --- Carregar Imagens dos Balões (Inimigos) ---
-ITEM_IMAGE_WIDTH = 60
-ITEM_IMAGE_HEIGHT = 80
+ITEM_IMAGE_WIDTH = 60  # Tamanho do balão NORMAL
+ITEM_IMAGE_HEIGHT = 80 # Tamanho do balão NORMAL
+
+# --- NOVAS VARIÁVEIS INDEPENDENTES PARA A EXPLOSÃO ---
+EXPLOSION_WIDTH = 120  # Tamanho da explosão (pode ser maior que o balão)
+EXPLOSION_HEIGHT = 120 # Tamanho da explosão
+
 balloon_images = {}
 try:
     balloon_images["red"] = pygame.image.load("balaovermelho.png").convert_alpha()
@@ -157,6 +162,65 @@ try:
 except pygame.error as e:
     print(f"ERRO: Não foi possível carregar uma ou mais imagens de balões. Usando círculos. Detalhes: {e}")
     balloon_images = {}
+
+# --- Carregar Imagens da Explosão (Animação) ---
+explosion_animations = {}
+
+# Animação para balão AMARELO (laranja no código)
+yellow_explosion_frames = []
+yellow_filenames = ["amarelo1.png", "amarelo2.png", "amarelo3.png", "amarelo4.png"]
+try:
+    for filename in yellow_filenames:
+        image = pygame.image.load(filename).convert_alpha()
+        image = pygame.transform.scale(image, (EXPLOSION_WIDTH, EXPLOSION_HEIGHT))
+        yellow_explosion_frames.append(image)
+    explosion_animations["orange"] = yellow_explosion_frames
+    print(f"Animação de explosão amarela carregada ({len(yellow_explosion_frames)} frames).")
+except pygame.error as e:
+    print(f"ERRO: Não foi possível carregar animação de explosão amarela. Detalhes: {e}")
+    explosion_animations["orange"] = []
+
+# Animação para balão VERMELHO
+red_explosion_frames = []
+red_filenames = ["vermelho1.png", "vermelho2.png", "vermelho3.png", "vermelho4.png"]
+try:
+    for filename in red_filenames:
+        image = pygame.image.load(filename).convert_alpha()
+        image = pygame.transform.scale(image, (EXPLOSION_WIDTH, EXPLOSION_HEIGHT))
+        red_explosion_frames.append(image)
+    explosion_animations["red"] = red_explosion_frames
+    print(f"Animação de explosão vermelha carregada ({len(red_explosion_frames)} frames).")
+except pygame.error as e:
+    print(f"ERRO: Não foi possível carregar animação de explosão vermelha. Detalhes: {e}")
+    explosion_animations["red"] = []
+
+# Animação para balão ROXO
+purple_explosion_frames = []
+purple_filenames = ["roxo1.png", "roxo2.png", "roxo3.png", "roxo4.png"]
+try:
+    for filename in purple_filenames:
+        image = pygame.image.load(filename).convert_alpha()
+        image = pygame.transform.scale(image, (EXPLOSION_WIDTH, EXPLOSION_HEIGHT))
+        purple_explosion_frames.append(image)
+    explosion_animations["purple"] = purple_explosion_frames
+    print(f"Animação de explosão roxa carregada ({len(purple_explosion_frames)} frames).")
+except pygame.error as e:
+    print(f"ERRO: Não foi possível carregar animação de explosão roxa. Detalhes: {e}")
+    explosion_animations["purple"] = []
+
+# --- NOVO: Animação para balão VERDE ---
+green_explosion_frames = []
+green_filenames = ["verde1.png", "verde2.png", "verde3.png", "verde4.png"]
+try:
+    for filename in green_filenames:
+        image = pygame.image.load(filename).convert_alpha()
+        image = pygame.transform.scale(image, (EXPLOSION_WIDTH, EXPLOSION_HEIGHT))
+        green_explosion_frames.append(image)
+    explosion_animations["green"] = green_explosion_frames
+    print(f"Animação de explosão verde carregada ({len(green_explosion_frames)} frames).")
+except pygame.error as e:
+    print(f"ERRO: Não foi possível carregar animação de explosão verde. Detalhes: {e}")
+    explosion_animations["green"] = []
 
 
 # Carregar bloon_death_green - imagem do boss
@@ -215,7 +279,24 @@ def draw_game(player, item_list, bullet_list, player_img, pos_hit_until_ms=0, cu
         pygame.draw.rect(screen, PLAYER_COLOR, player)
 
     for item in item_list:
-        if item["image"]:
+        # Verifica se o item está explodindo
+        if item.get("exploding", False):
+             frame_index = int(item["explosion_frame_index"])
+             
+             # Seleciona a animação correta baseada no tipo do item
+             anim_frames = explosion_animations.get(item["type"], [])
+             
+             if anim_frames and 0 <= frame_index < len(anim_frames):
+                 img = anim_frames[frame_index]
+                 
+                 # LÓGICA DE CENTRALIZAÇÃO:
+                 center_x, center_y = item["rect"].center
+                 explosion_rect = img.get_rect()
+                 explosion_rect.center = (center_x, center_y)
+                 
+                 screen.blit(img, explosion_rect.topleft)
+             
+        elif item["image"]:
             screen.blit(item["image"], item["rect"].topleft)
         else:
             center = (int(item["rect"].centerx), int(item["rect"].centery))
@@ -417,6 +498,9 @@ def run_game(screen):
     player_last_frame_update = pygame.time.get_ticks()
     PLAYER_ANIMATION_SPEED_MS = 100
     PLAYER_ANIMATION_SEQUENCE = [1, 0, 2, 0]
+    
+    # Configuração da Animação de Explosão
+    EXPLOSION_ANIMATION_SPEED = 0.35 # Quanto maior, mais rápido
 
     # Variáveis de Estado
     global current_score
@@ -530,7 +614,16 @@ def run_game(screen):
             item_y = random.randint(0, GAME_HEIGHT - ITEM_IMAGE_HEIGHT)
 
             new_item_rect = pygame.Rect(item_x, item_y, ITEM_IMAGE_WIDTH, ITEM_IMAGE_HEIGHT)
-            items.append({"rect": new_item_rect, "color": item_color, "type": item_type, "image": balloon_images.get(item_type)})
+            
+            # --- NOVAS VARIÁVEIS NO DICIONÁRIO ---
+            items.append({
+                "rect": new_item_rect, 
+                "color": item_color, 
+                "type": item_type, 
+                "image": balloon_images.get(item_type),
+                "exploding": False, # Estado inicial
+                "explosion_frame_index": 0.0 # Controle de frame
+            })
 
         # Mover projéteis
         for i in range(len(bullets) - 1, -1, -1):
@@ -539,9 +632,23 @@ def run_game(screen):
             if bullet.left > GAME_WIDTH:
                 bullets.pop(i)
 
-        # Mover inimigos
+        # Mover e Atualizar inimigos
         for i in range(len(items) - 1, -1, -1):
             item = items[i]
+            
+            # --- LÓGICA DE EXPLOSÃO ---
+            if item["exploding"]:
+                item["explosion_frame_index"] += EXPLOSION_ANIMATION_SPEED
+                
+                # Seleciona a animação correta para saber o tamanho máximo
+                anim_frames = explosion_animations.get(item["type"], [])
+                max_frames = len(anim_frames) if anim_frames else 0
+                
+                # Se a animação acabou ou não existe, remove o item
+                if max_frames == 0 or item["explosion_frame_index"] >= max_frames:
+                    items.pop(i)
+                continue # Pula o movimento se estiver explodindo
+
             item["rect"].x -= current_item_speed
 
             if item["rect"].right < 0:
@@ -570,6 +677,10 @@ def run_game(screen):
 
             for i_idx in range(len(items) - 1, -1, -1):
                 item = items[i_idx]
+                
+                # Ignora se já estiver explodindo
+                if item["exploding"]:
+                    continue
 
                 if bullet.colliderect(item["rect"]):
                     item_type = item["type"]
@@ -591,7 +702,15 @@ def run_game(screen):
                     else:
                         stats_intervals["2.0s+"] += 1
 
-                    items.pop(i_idx)
+                    # --- GATILHO DA EXPLOSÃO ---
+                    # Em vez de pop(), ativamos a explosão
+                    # Verifica se existe animação para este tipo, senão remove logo
+                    if item_type in explosion_animations and explosion_animations[item_type]:
+                        item["exploding"] = True
+                        item["explosion_frame_index"] = 0.0
+                    else:
+                        items.pop(i_idx) # Sem animação, remove direto
+                    
                     bullets.pop(b_idx)
 
                     hit_detected = True
