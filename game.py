@@ -72,12 +72,10 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), vsync=1)
 pygame.display.set_caption("Monkey Runners")
 clock = pygame.time.Clock()
 
-# --- Carregamento de Fontes ---
 try:
     title_font = pygame.font.Font("source/LuckiestGuy-Regular.ttf", 64)
     second_font = pygame.font.Font("source/LuckiestGuy-Regular.ttf", 26)
 except:
-    # Fallback se a fonte não existir
     print("AVISO: Fonte 'LuckiestGuy-Regular.ttf' não encontrada em 'source/'. Usando Arial.")
     title_font = pygame.font.SysFont("Arial", 64, bold=True)
     second_font = pygame.font.SysFont("Arial", 26, bold=True)
@@ -90,7 +88,6 @@ for i in range(pygame.joystick.get_count()):
     joy.init()
     joysticks.append(joy)
 
-# --- Carregamento de Sons (Com proteção contra crash) ---
 try:
     pygame.mixer.music.load("source/musica.mp3")
     pygame.mixer.music.set_volume(0.05)
@@ -111,7 +108,6 @@ except Exception as e:
     print(f"AVISO: Som de estouro não carregado: {e}")
     pop_sound = None
 
-# --- Carregamento de Imagens ---
 try:
     menu_bg = pygame.image.load("source/menu_.png").convert()
     menu_bg = pygame.transform.scale(menu_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))
