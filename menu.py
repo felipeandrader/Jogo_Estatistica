@@ -1,235 +1,170 @@
 import pygame
 
-# --- Cores ---
+# Cores
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (40, 40, 40)
 GREEN_HOVER = (0, 200, 0)
 BLUE_HOVER = (0, 0, 200) 
 RED_HOVER = (200, 0, 0)
-HIGHLIGHT_BORDER = (255, 255, 0) # Cor da borda quando selecionado
 
 def draw_text_with_outline(surface, font, text, center, text_color, outline_color=(0,0,0), offset=2):
-    """Desenha `text` com contorno: 4 passadas na cor de contorno e, por fim, o texto na cor principal.
-    `center` é a coordenada central onde o texto deve ficar alinhado.
-    """
     text_surface = font.render(text, True, text_color)
     outline_surface = font.render(text, True, outline_color)
-
-    # Posições (esquerda, direita, cima, baixo) conforme a lógica do .txt
     cx, cy = center
     for dx, dy in [(-offset, 0), (offset, 0), (0, -offset), (0, offset)]:
         rect_o = outline_surface.get_rect(center=(cx + dx, cy + dy))
         surface.blit(outline_surface, rect_o)
-
     rect_t = text_surface.get_rect(center=center)
     surface.blit(text_surface, rect_t)
 
 def show_menu(screen, screen_width, screen_height, title_font, main_font, background_image=None):
-    """
-    Mostra a tela de menu navegável por Mouse, Teclado e Controle.
-    Retorna: "PLAY", "PLAY_2P" ou "QUIT".
-    """
     clock = pygame.time.Clock()
-
-    # --- Inicialização de Joysticks no Menu ---
+    
+    # Inicializa Joysticks se necessário
     if not pygame.joystick.get_init():
         pygame.joystick.init()
-    
     joysticks = [pygame.joystick.Joystick(x) for x in range(pygame.joystick.get_count())]
     for joy in joysticks:
         if not joy.get_init():
             joy.init()
 
-    screen_height = 768
-
-    # --- Configuração dos Botões ---
-    button_width = 246
-    button_height = 217
+    button_width, button_height = 246, 217
+    button_2p_width, button_2p_height = 300, 120
     spacing = 100
     center_y = screen_height // 2
 
-    # Ajuste do tamanho do botão de 2 Jogadores
-    button_2p_width = 300
-    button_2p_height = 120
-
-    # Criamos uma lista de dicionários (removendo o botão SAIR)
+    # Opções do menu
     menu_options = [
         {
             "rect": pygame.Rect((screen_width // 2) - (button_width // 2), center_y - button_height + spacing, button_width, button_height),
-            "label": "1 JOGADOR",
             "action": "PLAY",
             "color_selected": GREEN_HOVER
         },
         {
             "rect": pygame.Rect((screen_width // 2) - (button_2p_width // 2), center_y + spacing, button_2p_width, button_2p_height),
-            "label": "2 JOGADORES",
             "action": "PLAY_2P",
             "color_selected": BLUE_HOVER
         }
     ]
 
-    selected_index = 0 # Qual opção está selecionada atualmente
+    selected_index = 0
 
-    #Carrega imagem
+    # Carregamento de Imagens (Sem try/except para mostrar erro se faltar arquivo)
+    # Certifique-se que estes arquivos existem na pasta source/
     try:
-        ace_bloon_img = pygame.image.load("ace_bloon.png").convert_alpha()
+        ace_bloon_img = pygame.image.load("source/ace_bloon.png").convert_alpha()
         ace_bloon_img = pygame.transform.smoothscale(ace_bloon_img, (340, 325))
-    except pygame.error:
+    except FileNotFoundError:
+        print("AVISO: 'source/ace_bloon.png' não encontrado.")
         ace_bloon_img = None
 
     try:
-        red_ace_bloon_img = pygame.image.load("red_ace_monkey.png").convert_alpha()
+        red_ace_bloon_img = pygame.image.load("source/red_ace_monkey.png").convert_alpha()
         red_ace_bloon_img = pygame.transform.smoothscale(red_ace_bloon_img, (340, 325))
-    except pygame.error:
+    except FileNotFoundError:
+        print("AVISO: 'source/red_ace_monkey.png' não encontrado.")
         red_ace_bloon_img = None
 
-    # Carrega sprites do botão JOGAR
+    # Imagens dos Botões
     try:
-        play_btn_img_default = pygame.image.load("botao_jogar_1.png").convert_alpha()
-        play_btn_img_default = pygame.transform.smoothscale(play_btn_img_default, (button_width, button_height))
-    except pygame.error:
-        play_btn_img_default = None
-    try:
-        play_btn_img_hover = pygame.image.load("botao_jogar_2.png").convert_alpha()
-        play_btn_img_hover = pygame.transform.smoothscale(play_btn_img_hover, (button_width, button_height))
-    except pygame.error:
-        play_btn_img_hover = None
-
-    # Carrega sprite do botão 2 Jogadores
-    try:
-        two_players_img = pygame.image.load("dois_jogadores_botao1.png").convert_alpha()
-        two_players_img = pygame.transform.smoothscale(two_players_img, (button_2p_width, button_2p_height))
-    except pygame.error:
-        two_players_img = None
+        p_def = pygame.image.load("source/botao_jogar_1.png").convert_alpha()
+        p_def = pygame.transform.smoothscale(p_def, (button_width, button_height))
+        
+        p_hov = pygame.image.load("source/botao_jogar_2.png").convert_alpha()
+        p_hov = pygame.transform.smoothscale(p_hov, (button_width, button_height))
+        
+        two_p_img = pygame.image.load("source/dois_jogadores_botao1.png").convert_alpha()
+        two_p_img = pygame.transform.smoothscale(two_p_img, (button_2p_width, button_2p_height))
+    except FileNotFoundError as e:
+        print(f"ERRO CRÍTICO: Imagem de botão faltando: {e}")
+        p_def = None
+        p_hov = None
+        two_p_img = None
 
     last_input_time = 0
-    INPUT_COOLDOWN = 200 
-
-    menu_running = True
-    while menu_running:
-        current_time = pygame.time.get_ticks()
-        mouse_pos = pygame.mouse.get_pos()
+    
+    while True:
+        now = pygame.time.get_ticks()
+        m_pos = pygame.mouse.get_pos()
         
-        # --- Verificação de Eventos ---
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return "QUIT"
-                
-            # --- MOUSE ---
-            # Se mover o mouse, seleciona o botão sob ele e atualiza o selected_index
+            if event.type == pygame.QUIT: return "QUIT"
+            
+            # Mouse motion
             if event.type == pygame.MOUSEMOTION:
-                for i, option in enumerate(menu_options):
-                    if option["rect"].collidepoint(mouse_pos):
-                        selected_index = i
-
-            # Clique do Mouse
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: # Botão esquerdo
-                    if menu_options[selected_index]["rect"].collidepoint(mouse_pos):
-                        return menu_options[selected_index]["action"]
-
-            # --- TECLADO ---
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_UP or event.key == pygame.K_w:
-                    selected_index = (selected_index - 1) % len(menu_options)
-                elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                    selected_index = (selected_index + 1) % len(menu_options)
-                elif event.key in [pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER]:
-                    return menu_options[selected_index]["action"]
-
-            # --- JOYSTICK (BOTÕES e D-PAD) ---
-            if event.type == pygame.JOYBUTTONDOWN:
-                if event.button in [0, 1, 2, 7]: 
+                for i, opt in enumerate(menu_options):
+                    if opt["rect"].collidepoint(m_pos): selected_index = i
+            
+            # Click
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if menu_options[selected_index]["rect"].collidepoint(m_pos):
                     return menu_options[selected_index]["action"]
             
+            # Teclado
+            if event.type == pygame.KEYDOWN:
+                if event.key in [pygame.K_UP, pygame.K_w]: selected_index = (selected_index - 1) % len(menu_options)
+                elif event.key in [pygame.K_DOWN, pygame.K_s]: selected_index = (selected_index + 1) % len(menu_options)
+                elif event.key in [pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER]: return menu_options[selected_index]["action"]
+            
+            # Joystick Botões
+            if event.type == pygame.JOYBUTTONDOWN:
+                if event.button in [0, 1, 2, 7]: return menu_options[selected_index]["action"]
+            
+            # Joystick D-PAD
             if event.type == pygame.JOYHATMOTION:
-                hat_x, hat_y = event.value
-                if hat_y == 1: # Cima
-                    selected_index = (selected_index - 1) % len(menu_options)
-                elif hat_y == -1: # Baixo
-                    selected_index = (selected_index + 1) % len(menu_options)
+                if event.value[1] == 1: selected_index = (selected_index - 1) % len(menu_options)
+                elif event.value[1] == -1: selected_index = (selected_index + 1) % len(menu_options)
 
-        # --- JOYSTICK (ANALÓGICO) ---
-        if current_time - last_input_time > INPUT_COOLDOWN:
-            moved = False
+        # Joystick Analógico (com delay para não pular muito rápido)
+        if now - last_input_time > 200:
             for joy in joysticks:
                 try:
-                    axis_y = joy.get_axis(1) 
-                    if axis_y < -0.5: # Cima
-                        selected_index = (selected_index - 1) % len(menu_options)
-                        moved = True
-                    elif axis_y > 0.5: # Baixo
-                        selected_index = (selected_index + 1) % len(menu_options)
-                        moved = True
-                except:
-                    pass
-            
-            if moved:
-                last_input_time = current_time
+                    ay = joy.get_axis(1)
+                    if abs(ay) > 0.5:
+                        selected_index = (selected_index + (1 if ay > 0 else -1)) % len(menu_options)
+                        last_input_time = now
+                except: pass
 
-        # --- Desenho ---
-        if background_image:
-            try:
-                screen.blit(background_image, (0, 0))
-            except Exception:
-                screen.fill(GRAY)
-        else:
-            screen.fill(GRAY)
+        # Desenho
+        if background_image: screen.blit(background_image, (0,0))
+        else: screen.fill(GRAY)
+
+        draw_text_with_outline(screen, title_font, "MONKEY RUNNERS", (screen_width // 2, (screen_height // 3) - 50), WHITE, BLACK)
+
+        # Desenha imagens decorativas se existirem
+        if ace_bloon_img: screen.blit(ace_bloon_img, (100, screen_height - ace_bloon_img.get_height() - 150))
+        if red_ace_bloon_img: screen.blit(red_ace_bloon_img, (screen_width - red_ace_bloon_img.get_width() - 50, screen_height - red_ace_bloon_img.get_height() - 150))
+
+        # Botão 1 Jogador
+        is_play = (selected_index == 0)
+        p_rect = menu_options[0]["rect"]
         
-        # Título
-        title_offset_y = -50
-        title_center = (screen_width // 2, (screen_height // 3) + title_offset_y)
-        draw_text_with_outline(screen, title_font, "MONKEY RUNNERS", title_center, WHITE, BLACK, offset=2)
+        if p_def and p_hov:
+            if is_play: screen.blit(p_hov, p_rect.topleft)
+            else: screen.blit(p_def, p_rect.topleft)
+        else:
+            # Fallback se não tiver imagem
+            c = menu_options[0]["color_selected"] if is_play else BLACK
+            pygame.draw.rect(screen, c, p_rect, border_radius=10)
+            screen.blit(main_font.render("1 JOGADOR", True, WHITE), p_rect.center)
 
-        # ---------------------------------------------------------
-        #  ATUALIZAÇÃO IMPORTANTE AQUI:
-        #  Usamos 'selected_index' para decidir o visual, 
-        #  não mais a posição do mouse diretamente.
-        # ---------------------------------------------------------
-
-        # --- Botão 2 Jogadores ---
+        # Botão 2 Jogadores
+        is_two = (selected_index == 1)
         two_rect = menu_options[1]["rect"]
-        # Verifica se o índice 1 está selecionado (pelo mouse ou controle)
-        is_two_selected = (selected_index == 1) 
-
-        if two_players_img:
-            if is_two_selected:
-                try:
-                    temp_img = two_players_img.copy()
-                    temp_img.set_alpha(160)  # Efeito visual (hover/seleção)
-                    screen.blit(temp_img, two_rect.topleft)
-                except Exception:
-                    screen.blit(two_players_img, two_rect.topleft)
-            else:
-                screen.blit(two_players_img, two_rect.topleft)
-        else:
-            # Fallback
-            color = BLUE_HOVER if is_two_selected else BLACK
-            if is_two_selected:
-                pygame.draw.rect(screen, WHITE, two_rect.inflate(6, 6), border_radius=10)
-            pygame.draw.rect(screen, color, two_rect, border_radius=10)
-            text_surf = main_font.render("2 JOGADORES", True, WHITE)
-            text_rect = text_surf.get_rect(center=two_rect.center)
-            screen.blit(text_surf, text_rect)
-
-        screen.blit(ace_bloon_img, (100, screen_height - ace_bloon_img.get_height() - 150))
-        screen.blit(red_ace_bloon_img, (screen_width - red_ace_bloon_img.get_width() - 50, screen_height - red_ace_bloon_img.get_height() - 150))
-
-        # --- Botão 1 Jogador ---
-        play_rect = menu_options[0]["rect"]
-        # Verifica se o índice 0 está selecionado
-        is_play_selected = (selected_index == 0)
-
-        if is_play_selected and play_btn_img_hover:
-            screen.blit(play_btn_img_hover, play_rect.topleft)
-        elif play_btn_img_default:
-            screen.blit(play_btn_img_default, play_rect.topleft)
-        else:
-            # Fallback
-            play_text = main_font.render("1 JOGADOR", True, WHITE)
-            play_text_rect = play_text.get_rect(center=play_rect.center)
-            screen.blit(play_text, play_text_rect)
         
+        if two_p_img:
+            if is_two:
+                t_copy = two_p_img.copy()
+                t_copy.set_alpha(160) # Efeito visual de seleção
+                screen.blit(t_copy, two_rect.topleft)
+            else:
+                screen.blit(two_p_img, two_rect.topleft)
+        else:
+            # Fallback
+            c = menu_options[1]["color_selected"] if is_two else BLACK
+            pygame.draw.rect(screen, c, two_rect, border_radius=10)
+            screen.blit(main_font.render("2 JOGADORES", True, WHITE), two_rect.center)
+
         pygame.display.flip()
         clock.tick(30)
