@@ -1,21 +1,23 @@
-# 🐒 Monkey Runners 📊
-⚙️ Requisitos para Rodar o Jogo
+# 🐒 Monkey Runners
 
-Como não há um executável fornecido, o projeto deve ser executado diretamente através do código-fonte. Você precisará ter o Python e a Pygame intalado.
+Bem-vindo ao **Monkey Runners**! Este projeto combina o desenvolvimento de jogos com **Pygame** e visualização de dados em tempo real. Como o projeto é executado via código-fonte, siga as instruções abaixo para preparar seu ambiente e começar a diversão.
 
-1. Requisitos de Software
+---
 
-  Python 3.
+## 🛠️ Requisitos de Software
 
-2. Instalação das Dependências
+Antes de começar, você precisará ter o Python instalado em sua máquina:
+* **Python 3.x** (Recomendamos a versão 3.8 ou superior)
 
-Abra seu terminal ou prompt de comando, navegue até o diretório raiz do projeto , e execute o seguinte comando para instalar pygame:
+---
 
-  python -m pip install pygame
+## 🚀 Instalação e Configuração
 
-3. Como Executar o Jogo
+### 1. Preparar o Ambiente
+Se você baixou o projeto manualmente, abra o terminal ou prompt de comando e navegue até a pasta raiz do projeto.
 
-Após instalar as dependências, execute o arquivo principal do jogo :
-python game.py || py game.py
+### 2. Instalar Dependências
+O jogo utiliza a biblioteca **Pygame**. Instale-a rapidamente executando:
 
-O jogo e a janela de gráficos em tempo real devem ser iniciados.
+```bash
+python -m pip install pygame
